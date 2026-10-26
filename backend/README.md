@@ -249,3 +249,84 @@ per-event cap. Overflow fails the operation and reaps the worker while draining
 remaining pipes in bounded chunks. These limits bound transport buffers, not
 model inference RAM/VRAM. Backend lifespan cleanup also runs after partial startup
 failure, and unused model lease counters are removed when their count reaches zero.
+
+## Nguồn RTSP và API lượt chạy live
+
+Backend đã hỗ trợ lưu cấu hình RTSP/RTSPS và điều phối inference qua endpoint
+nội bộ riêng của AI. Frontend chọn source/preview live chưa được nối.
+Không cần migration: bảng `sources` đã có kind `stream`, run lưu JSON có default
+cho trường mới nên ảnh/video cũ vẫn đọc được.
+
+### Lưu và sửa camera
+
+```http
+POST /api/v1/sources/rtsp
+Content-Type: application/json
+
+{"name":"Camera cổng","url":"rtsp://user:password@192.168.1.10:554/live"}
+```
+
+Trả `201 SourceResponse`, kind `stream`; `content_url`/`preview_url` là `null`.
+`location` chỉ là **nhãn đã che credentials và query**, không dùng nhãn này để
+kết nối lại hoặc điền mặc định rồi gửi form chỉnh sửa. URL gốc được lưu trong
+SQLite local để backend cung cấp cho AI; chưa có mã hoá bí mật trong DB.
+
+- `PUT /api/v1/sources/{id}/rtsp`: JSON cùng cấu trúc, thay đầy đủ tên/URL camera.
+- `GET /api/v1/sources?kind=stream`: danh sách dùng response đã che.
+- `GET /api/v1/sources/{id}`, `PATCH /api/v1/sources/{id}` (đổi tên),
+  `DELETE /api/v1/sources/{id}`: dùng API nguồn hiện có.
+- Tạo/sửa không mở camera hoặc xác nhận camera đang online. URL chỉ nhận
+  `rtsp://`/`rtsps://`, có host/port hợp lệ, không fragment/control/space.
+- Không nhận HTTP/RTMP/YouTube/file qua API này. Nguồn LAN/private IP là hợp lệ.
+- Lỗi validation chỉ trả vị trí/loại lỗi, không phản chiếu giá trị đầu vào.
+
+### Chạy suy luận
+
+```http
+POST /api/v1/runs/stream
+Content-Type: application/json
+
+{
+  "model_id":"<model-id>",
+  "source_id":"<source-uuid>",
+  "options":{"device":"auto","imgsz":[640,640],"vid_stride":1},
+  "duration_seconds":3600
+}
+```
+
+Trả `202 RunRecord`; options giống ảnh/video. Model phải sẵn sàng và class/imgsz
+hợp lệ. Không nhận URL trực tiếp, chỉ nhận source ID đã lưu. `duration_seconds`
+là số nguyên 1–14400, mặc định 3600 giây; tính sau khi model/capture đã mở,
+không tính thời gian chờ hàng đợi và cold load. Native read/inference cuối cùng
+có thể khiến terminal trễ thêm so với thời hạn này.
+
+Dùng tiếp các API sẵn có:
+
+- `GET /api/v1/runs/{id}` hoặc WebSocket `/api/v1/runs/{id}/events`: snapshot mới
+  nhất, `source_kind="stream"`, `progress.is_live=true`, `percent=null`,
+  `total_frames=null`; không lưu timeline/frame nhị phân. `source_fps` có thể
+  `null` khi camera không cung cấp; `processing_fps` là FPS suy luận thực tế.
+- `DELETE /api/v1/runs/{id}`: dừng run, huỷ HTTP AI và kill/reap worker.
+- Đến hạn: `completed`, `completion_reason="duration_limit"`. Mất camera/stream
+  EOF trước terminal: `failed`. Chủ động dừng: `cancelled`. Frame cuối được giữ.
+- Live chưa có preview phát trên trình duyệt: `/runs/{id}/preview` trả 404 và
+  `source_metadata.preview_available=false`. Không trả URL/password qua run JSON
+  hay WebSocket. Frontend cần xử lý `source_kind="stream"` và nullable FPS khi nối.
+
+URL camera được snapshot riêng trong task lúc tạo job. Sửa/xoá source không đổi
+URL hoặc tự dừng job đang chạy; muốn dừng phải cancel run. Backend restart đánh
+live job chưa xong thành failed; không tự kết nối lại camera. Run terminal vẫn
+hết hạn/dọn sau 24 giờ nhưng không có file media để xoá.
+
+RTSP dùng chung giới hạn hiện tại: tối đa bốn job active/queued, một inference
+đồng thời. Một live run dài sẽ giữ lượt xử lý; các job ảnh/video khác phải chờ.
+API này dành cho workspace local hiện có; service AI chỉ để backend truy cập.
+
+### Kiểm chứng
+
+`tests/runs/test_rtsp.py` dùng DB/storage thật và HTTP AI giả lập để kiểm CRUD,
+validation/redaction, định tuyến payload, snapshot, WebSocket, cancel/lease,
+queue, EOF/error, expiry và restart. Bộ AI có test contract/adapter/worker riêng.
+Đã smoke test RTSP H264/RTP interleaved TCP từ fixture loopback với YOLO26s thật
+trên CPU/CUDA, gồm hết hạn, cancel và camera không kết nối được. Đây chưa phải
+kiểm chứng camera vật lý, RTSPS/TLS hoặc soak nhiều giờ.

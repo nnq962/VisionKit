@@ -9,10 +9,11 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.contracts.model import InspectRequest, InspectResult
-from app.contracts.prediction import PredictRequest
+from app.contracts.prediction import PredictRequest, StreamPredictRequest
 from app.core.config import Settings, load_settings
 from app.core.logs import (
     LogBuffer,
@@ -43,6 +44,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application = FastAPI(title="VisionKit AI", version="0.1.0", lifespan=lifespan)
     application.state.logs = LogBuffer("ai")
+
+    @application.exception_handler(RequestValidationError)
+    async def validation_error(
+        request: Request, error: RequestValidationError
+    ) -> JSONResponse:
+        """Không phản chiếu payload có URL/password camera trong lỗi 422 nội bộ."""
+        return JSONResponse(
+            status_code=422, content={"detail": "Thông số yêu cầu AI không hợp lệ."}
+        )
 
     @application.middleware("http")
     async def request_logging(
@@ -144,6 +154,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 yield json.dumps({"type": "error", "error": str(error)[:250]}) + "\n"
 
         return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+    @application.post("/api/v1/inference/stream")
+    async def predict_stream(body: StreamPredictRequest) -> StreamingResponse:
+        """RTSP NDJSON nội bộ; ngắt HTTP sẽ huỷ generator và kill/reap worker."""
+
+        async def stream() -> AsyncIterator[str]:
+            """Trả snapshot mới nhất; lỗi mạng/model dùng thông báo chung, không chứa URL."""
+            try:
+                async with aclosing(inference.stream(body)) as events:
+                    async for event in events:
+                        yield json.dumps(event, allow_nan=False) + "\n"
+            except ValueError:
+                logger.warning("Inference RTSP thất bại.")
+                yield (
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "error": "Không xử lý được RTSP. Kiểm tra model, camera và kết nối.",
+                        }
+                    )
+                    + "\n"
+                )
+
+        return StreamingResponse(
+            stream(),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-store"},
+        )
 
     return application
 

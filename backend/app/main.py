@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -74,14 +75,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(config.cors_origins),
-        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Content-Type"],
     )
     application.include_router(router)
     application.add_exception_handler(SourceError, source_error_handler)
     application.add_exception_handler(sqlite3.Error, storage_error_handler)
     application.add_exception_handler(OSError, storage_error_handler)
+    application.add_exception_handler(RequestValidationError, validation_error_handler)
     return application
+
+
+# --------------------------- Lỗi kiểm tra đầu vào ----------------------------
+async def validation_error_handler(
+    request: Request, error: RequestValidationError
+) -> JSONResponse:
+    """Trả vị trí/loại lỗi mà không phản chiếu input có thể chứa mật khẩu camera."""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": [
+                {
+                    "loc": list(item["loc"]),
+                    "type": item["type"],
+                    "msg": "Giá trị không hợp lệ.",
+                }
+                for item in error.errors()
+            ]
+        },
+    )
 
 
 # ---------------------------- Xử lý lỗi nghiệp vụ ----------------------------

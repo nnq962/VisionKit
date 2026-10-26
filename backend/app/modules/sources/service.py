@@ -5,11 +5,12 @@ from typing import BinaryIO
 from uuid import uuid4
 
 from app.core.errors import SourceError
+from app.core.rtsp import rtsp_label
 from app.storage.local import LocalStorage
 
 from .models import Source, SourceKind
 from .repository import SourceRepository
-from .schemas import SourcePage, SourceResponse
+from .schemas import RtspSourceCreate, SourcePage, SourceResponse
 
 
 # ------------------------------ Service source -------------------------------
@@ -29,6 +30,9 @@ class SourceService:
     def response(self, source: Source) -> SourceResponse:
         """Chuyển bản ghi thành response, thêm URL nội dung cho source đã upload."""
         response = SourceResponse.model_validate(source)
+        if source.kind == SourceKind.STREAM:
+            response.location = rtsp_label(source.location)
+            response.metadata = {"protocol": "rtsp", "is_live": True}
         if source.kind in (SourceKind.IMAGE, SourceKind.SCREEN, SourceKind.VIDEO):
             response.content_url = f"/api/v1/sources/{source.id}/content"
             response.preview_url = (
@@ -37,6 +41,28 @@ class SourceService:
                 else response.content_url
             )
         return response
+
+    def create_rtsp(self, body: RtspSourceCreate) -> SourceResponse:
+        """Lưu URL gốc trong DB local và trả nhãn đã che; không mở camera hay tạo file."""
+        source = self.repository.create(
+            name=body.name,
+            kind=SourceKind.STREAM,
+            location=body.url.get_secret_value(),
+            metadata={"protocol": "rtsp", "is_live": True},
+        )
+        return self.response(source)
+
+    def update_rtsp(self, source_id: str, body: RtspSourceCreate) -> SourceResponse:
+        """Thay tên/URL camera cho lượt chạy mới; không thay URL snapshot của lượt đang chạy."""
+        source = self.get(source_id)
+        if source.kind != SourceKind.STREAM:
+            raise SourceError(422, "Source không phải camera RTSP.")
+        updated = self.repository.update(
+            source_id, name=body.name, location=body.url.get_secret_value()
+        )
+        if updated is None:
+            raise SourceError(404, "Không tìm thấy source.")
+        return self.response(updated)
 
     def get(self, source_id: str) -> Source:
         """Trả bản ghi theo ID; phát sinh SourceError 404 nếu không tồn tại."""

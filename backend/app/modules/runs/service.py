@@ -16,9 +16,11 @@ from starlette.concurrency import run_in_threadpool
 from app.core.config import Settings
 from app.core.errors import SourceError
 from app.core.logs import run_context
+from app.core.rtsp import validate_rtsp_url
 from app.modules.models.repository import timestamp
 from app.modules.models.schemas import StoredModel
 from app.modules.models.service import ModelService
+from app.modules.sources.models import Source, SourceKind
 from app.storage.local import LocalStorage
 
 from .repository import RunRepository
@@ -85,69 +87,130 @@ class RunService:
             filename,
         )
         try:
-            async with self.models.lock:
-                if len(self.tasks) >= 4:
-                    raise SourceError(429, "Hàng chờ chạy đã đầy.")
-                model = self.models.available(model_id)
-                if model.inspection.status not in {"ready", "manual"}:
-                    raise SourceError(409, "Đọc metadata model trước khi chạy.")
-                if model.variant.task not in {
-                    "detect",
-                    "pose",
-                    "classify",
-                    "segment",
-                    "obb",
-                }:
-                    raise SourceError(422, "Tác vụ model chưa được hỗ trợ.")
-                if any(size < 32 or size > 4096 for size in options.imgsz):
-                    raise SourceError(422, "Kích thước đầu vào không hợp lệ.")
-                names = (
-                    model.inspection.metadata.names if model.inspection.metadata else {}
-                )
-                if options.classes is not None and (
-                    not options.classes
-                    or any(str(index) not in names for index in options.classes)
-                ):
-                    raise SourceError(422, "Danh sách class không hợp lệ.")
-                run_id = str(uuid4())
-                record = self.repository.save(
-                    RunRecord(
-                        id=run_id,
-                        status="queued",
-                        source_kind=kind,
-                        model_id=model_id,
-                        source_location=location,
-                        source_metadata=metadata,
-                        options=options,
-                        expires_at=(
-                            datetime.now(timezone.utc) + timedelta(hours=24)
-                        ).isoformat(),
-                        created_at=timestamp(),
-                        updated_at=timestamp(),
-                    )
-                )
-                self.models.in_use[model_id] = self.models.in_use.get(model_id, 0) + 1
-                self.pinned[run_id] = model_id
-                self.tasks[run_id] = asyncio.create_task(
-                    self._run(record, model), name=run_id
-                )
-                self.tasks[run_id].add_done_callback(self._finished)
-                logger.info("Đã tạo lượt chạy %s.", kind, extra={"run_id": run_id})
-                return record
+            return await self._enqueue(model_id, options, location, metadata, kind)
         except Exception:
             for path in self.storage.source_paths(location, metadata):
                 path.unlink(missing_ok=True)
             raise
 
-    async def _run(self, record: RunRecord, model: StoredModel) -> None:
+    async def create_stream(
+        self, model_id: str, options: RunOptions, source: Source, duration_seconds: int
+    ) -> RunRecord:
+        """Tạo live job bằng source đã lưu; URL thật chỉ giữ trong task, không ghi record/log.
+
+        Không tạo file snapshot. Lượt chạy có hạn rõ ràng và phải dừng bằng API cancel
+        hoặc hoàn tất khi đến hạn; chỉnh/xoá source không đổi snapshot URL của task.
+        """
+        if source.kind != SourceKind.STREAM:
+            raise SourceError(422, "Chọn source RTSP đã lưu.")
+        try:
+            url = validate_rtsp_url(source.location)
+        except ValueError:
+            raise SourceError(422, "Source không có URL RTSP hợp lệ.") from None
+        return await self._enqueue(
+            model_id,
+            options,
+            "",
+            {
+                "source_id": source.id,
+                "is_live": True,
+                "preview_available": False,
+                "duration_seconds": duration_seconds,
+            },
+            "stream",
+            stream_url=url,
+            duration_seconds=duration_seconds,
+        )
+
+    async def _enqueue(
+        self,
+        model_id: str,
+        options: RunOptions,
+        location: str,
+        metadata: dict,
+        kind: str,
+        *,
+        stream_url: str | None = None,
+        duration_seconds: int = 3600,
+    ) -> RunRecord:
+        """Kiểm model/options và giữ lease trong cùng khoá trước khi đưa job vào hàng chờ."""
+        if not self.settings.ai_url:
+            raise SourceError(503, "AI chưa được cấu hình.")
+        async with self.models.lock:
+            if len(self.tasks) >= 4:
+                raise SourceError(429, "Hàng chờ chạy đã đầy.")
+            model = self.models.available(model_id)
+            if model.inspection.status not in {"ready", "manual"}:
+                raise SourceError(409, "Đọc metadata model trước khi chạy.")
+            if model.variant.task not in {
+                "detect",
+                "pose",
+                "classify",
+                "segment",
+                "obb",
+            }:
+                raise SourceError(422, "Tác vụ model chưa được hỗ trợ.")
+            if any(size < 32 or size > 4096 for size in options.imgsz):
+                raise SourceError(422, "Kích thước đầu vào không hợp lệ.")
+            names = model.inspection.metadata.names if model.inspection.metadata else {}
+            if options.classes is not None and (
+                not options.classes
+                or any(str(index) not in names for index in options.classes)
+            ):
+                raise SourceError(422, "Danh sách class không hợp lệ.")
+            run_id = str(uuid4())
+            record = self.repository.save(
+                RunRecord(
+                    id=run_id,
+                    status="queued",
+                    source_kind=kind,
+                    model_id=model_id,
+                    source_location=location,
+                    source_metadata=metadata,
+                    options=options,
+                    expires_at=(
+                        datetime.now(timezone.utc) + timedelta(hours=24)
+                    ).isoformat(),
+                    created_at=timestamp(),
+                    updated_at=timestamp(),
+                )
+            )
+            self.models.in_use[model_id] = self.models.in_use.get(model_id, 0) + 1
+            self.pinned[run_id] = model_id
+            self.tasks[run_id] = asyncio.create_task(
+                self._run(
+                    record,
+                    model,
+                    stream_url=stream_url,
+                    duration_seconds=duration_seconds,
+                ),
+                name=run_id,
+            )
+            self.tasks[run_id].add_done_callback(self._finished)
+            logger.info("Đã tạo lượt chạy %s.", kind, extra={"run_id": run_id})
+            return record
+
+    async def _run(
+        self,
+        record: RunRecord,
+        model: StoredModel,
+        *,
+        stream_url: str | None = None,
+        duration_seconds: int = 3600,
+    ) -> None:
         """Gọi AI, xác minh JSON cơ bản và lưu kết quả; huỷ request khi người dùng dừng."""
         token = run_context.set(record.id)
         try:
             async with self.semaphore:
                 logger.info("Bắt đầu xử lý %s.", record.source_kind)
                 self.repository.save(record.model_copy(update={"status": "running"}))
-                if record.source_kind == "video":
-                    await self._video(record, model)
+                if record.source_kind in {"video", "stream"}:
+                    await self._video(
+                        record,
+                        model,
+                        stream_url=stream_url,
+                        duration_seconds=duration_seconds,
+                    )
                     return
                 response = await self.client.post(
                     f"{self.settings.ai_url}/api/v1/inference/image",
@@ -156,7 +219,7 @@ class RunService:
                         "model_location": model.location,
                         "model_sha256": model.sha256,
                         "source_location": record.source_location,
-                        "source_sha256": record.source_metadata["sha256"],
+                        "source_sha256": record.source_metadata.get("sha256"),
                         "family": "yoloe"
                         if model.variant.familyId.startswith("yoloe")
                         else "yolo",
@@ -203,8 +266,15 @@ class RunService:
             self._release(record.id)
             run_context.reset(token)
 
-    async def _video(self, record: RunRecord, model: StoredModel) -> None:
-        """Đọc event video tuần tự, giữ một snapshot mới nhất và ghi DB tối đa mỗi giây.
+    async def _video(
+        self,
+        record: RunRecord,
+        model: StoredModel,
+        *,
+        stream_url: str | None = None,
+        duration_seconds: int = 3600,
+    ) -> None:
+        """Đọc event video/live, giữ một snapshot mới nhất và ghi DB tối đa mỗi giây.
 
         Không lưu timeline hoặc xếp hàng kết quả cho trình duyệt. Chỉ completed
         khi nhận terminal event; EOF sớm hoặc event error giữ lại kết quả cuối.
@@ -213,17 +283,23 @@ class RunService:
             "model_location": model.location,
             "model_sha256": model.sha256,
             "source_location": record.source_location,
-            "source_sha256": record.source_metadata["sha256"],
+            "source_sha256": record.source_metadata.get("sha256"),
             "family": "yoloe" if model.variant.familyId.startswith("yoloe") else "yolo",
             "task": model.variant.task,
             "options": record.options.model_dump(),
         }
+        endpoint = "video"
+        if record.source_kind == "stream":
+            endpoint = "stream"
+            payload.pop("source_location")
+            payload.pop("source_sha256")
+            payload.update(stream_url=stream_url, duration_seconds=duration_seconds)
         last_write = 0.0
         last_log = time.monotonic()
         completed = False
         async with self.client.stream(
             "POST",
-            f"{self.settings.ai_url}/api/v1/inference/video",
+            f"{self.settings.ai_url}/api/v1/inference/{endpoint}",
             json=payload,
             headers={"X-VisionKit-Run-ID": record.id},
         ) as response:
@@ -236,7 +312,10 @@ class RunService:
                 event = json.loads(line)
                 if event.get("type") == "error":
                     raise SourceError(
-                        422, str(event.get("error", "Không chạy được video."))[:250]
+                        422,
+                        "Không xử lý được stream. Kiểm tra camera và kết nối."
+                        if record.source_kind == "stream"
+                        else str(event.get("error", "Không chạy được video."))[:250],
                     )
                 if event.get("type") not in {"frame", "completed"}:
                     raise SourceError(502, "Sự kiện AI không hợp lệ.")
@@ -248,11 +327,20 @@ class RunService:
                 ):
                     raise SourceError(502, "Kết quả video không hợp lệ.")
                 completed = event["type"] == "completed"
+                if (
+                    completed
+                    and record.source_kind == "stream"
+                    and event.get("reason") != "duration_limit"
+                ):
+                    raise SourceError(502, "Stream kết thúc thiếu lý do hợp lệ.")
                 current = record.model_copy(
                     update={
                         "status": "completed" if completed else "running",
                         "result": result,
                         "progress": event.get("progress"),
+                        "completion_reason": "duration_limit"
+                        if completed and record.source_kind == "stream"
+                        else None,
                         "updated_at": timestamp(),
                     }
                 )
@@ -306,6 +394,8 @@ class RunService:
     def content(self, run_id: str) -> Path:
         """Trả ảnh preview phù hợp trình duyệt trong storage riêng của lượt chạy."""
         record = self.get(run_id)
+        if record.source_kind == "stream":
+            raise SourceError(404, "Stream chưa có preview trên trình duyệt.")
         location = (
             record.source_location
             if record.source_kind == "video"
@@ -319,10 +409,11 @@ class RunService:
     def cleanup_expired(self) -> None:
         """Xoá ảnh snapshot và JSON kết quả terminal hết hạn 24 giờ; không chạm source thư viện."""
         for record in self.repository.expired():
-            for path in self.storage.source_paths(
-                record.source_location, record.source_metadata
-            ):
-                path.unlink(missing_ok=True)
+            if record.source_kind != "stream":
+                for path in self.storage.source_paths(
+                    record.source_location, record.source_metadata
+                ):
+                    path.unlink(missing_ok=True)
             self.repository.delete(record.id)
 
     async def maintain(self) -> None:

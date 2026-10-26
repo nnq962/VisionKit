@@ -19,7 +19,7 @@ from pydantic import ValidationError
 
 from app.core.errors import SourceError
 
-from .schemas import RunOptions, RunRecord
+from .schemas import RunOptions, RunRecord, StreamRunCreate
 from .service import RunService
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -29,6 +29,20 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 def get_service(request: Request) -> RunService:
     """Lấy service đang sống trong app, không mở thêm kết nối hoặc nạp model."""
     return request.app.state.runs
+
+
+# ----------------------------- Chạy nguồn RTSP -------------------------------
+@router.post("/stream", response_model=RunRecord, status_code=202)
+async def create_stream_run(
+    body: StreamRunCreate,
+    request: Request,
+    service: Annotated[RunService, Depends(get_service)],
+) -> RunRecord:
+    """Tạo job RTSP có thời hạn từ source đã lưu; không trả URL/password camera."""
+    source = request.app.state.sources.get(str(body.source_id))
+    return await service.create_stream(
+        body.model_id, body.options, source, body.duration_seconds
+    )
 
 
 # ------------------------------ Tạo lượt chạy ảnh ----------------------------
@@ -57,6 +71,8 @@ async def create_run(
         finally:
             file.file.close()
     sources = request.app.state.sources
+    if sources.get(str(source_id)).kind.value == "stream":
+        raise SourceError(422, "Chạy source RTSP bằng POST /api/v1/runs/stream.")
     source, path = sources.content(str(source_id))
     if source.kind.value not in {"image", "screen", "video"}:
         raise SourceError(422, "Hiện hỗ trợ inference ảnh, ảnh màn hình và video file.")

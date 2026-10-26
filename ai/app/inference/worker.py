@@ -3,6 +3,7 @@
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import sys
 import traceback
@@ -21,6 +22,7 @@ def main() -> None:
     from app.adapters.ultralytics.yolo import predict_image
     from app.contracts.prediction import PredictRequest
 
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     try:
         request = PredictRequest.model_validate_json(sys.stdin.read())
         model_path, source_path = Path(sys.argv[1]), Path(sys.argv[2])

@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,7 +34,7 @@ class RunRecord(BaseModel):
 
     id: str
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
-    source_kind: Literal["image", "screen", "video"] = "image"
+    source_kind: Literal["image", "screen", "video", "stream"] = "image"
     progress: dict[str, Any] | None = None
     model_id: str
     source_location: str
@@ -41,6 +42,18 @@ class RunRecord(BaseModel):
     options: RunOptions
     result: dict[str, Any] | None = None
     error: str | None = None
+    completion_reason: Literal["duration_limit"] | None = None
     expires_at: str = Field(default_factory=run_expiry)
     created_at: str
     updated_at: str
+
+
+# --------------------------- Yêu cầu chạy camera -----------------------------
+class StreamRunCreate(BaseModel):
+    """Chạy RTSP từ source ID đã lưu; không cho truyền URL camera trực tiếp vào run."""
+
+    model_config = ConfigDict(extra="forbid")
+    model_id: str = Field(min_length=1, max_length=255)
+    source_id: UUID
+    options: RunOptions = Field(default_factory=RunOptions)
+    duration_seconds: int = Field(default=3600, ge=1, le=14400, strict=True)

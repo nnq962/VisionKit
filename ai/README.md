@@ -30,7 +30,8 @@ Mỗi lượt inspect chạy trong subprocess, giới hạn một lượt cùng 
 - `app/inspection/service.py`: kiểm soát đường dẫn, subprocess và timeout.
 - `app/inspection/worker.py`: kiểm tra checksum, chọn bộ đọc định dạng.
 - `app/inspection/pt.py`, `onnx.py`: trích xuất metadata theo định dạng.
-- Các thư mục adapters/inference giữ chỗ cho các bước chạy AI sau.
+- `app/media_sources/`: reader độc lập model cho ảnh/video và nguồn live.
+- `app/adapters/ultralytics/`, `app/inference/`: suy luận và quản lý worker.
 
 ## Kiểm tra
 
@@ -79,3 +80,50 @@ kill/reap workers and drain remaining pipes without accumulating discarded outpu
 tasks and worker stderr capture without changing model request payloads. The
 logging path never waits for a browser viewer. Log polling and health checks do
 not produce log entries in the buffer.
+
+## Bộ đọc source
+
+Ảnh/video inference đã dùng [`app/media_sources`](app/media_sources/README.md).
+Module trả frame BGR và metadata; Ultralytics chỉ nhận frame để suy luận.
+Pillow giữ hỗ trợ HEIC/HEIF/EXIF; video giữ stride, rotation và pacing hiện tại.
+Nguồn mạng có reader Python nội bộ nhưng chưa được mở trong hợp đồng HTTP.
+YouTube là extra tùy chọn, không bắt buộc để chạy ảnh/video.
+
+## Inference RTSP nội bộ
+
+`POST /api/v1/inference/stream` nhận model location/checksum, family/task/options,
+`stream_url` RTSP/RTSPS và `duration_seconds` (1–14400, default 3600). Đây là
+endpoint riêng; image/video local vẫn giữ hợp đồng và protocol file/pipe cũ.
+Backend chỉ đưa URL từ source đã lưu, không công khai endpoint AI cho trình duyệt.
+
+Worker `app.inference.stream_worker` kiểm SHA-256 model rồi đưa URL qua stdin,
+không qua command line. FFmpeg dùng RTSP/TCP, whitelist `rtsp,rtsps,tcp,tls,crypto`;
+không mở file/HTTP source qua endpoint này. Không cần GStreamer. Worker dùng
+`StreamBatchReader` latest-frame, tối đa một slot/source, cùng model/semaphore
+hiện có, và chỉ gửi NDJSON metadata/detections, không gửi ảnh nhị phân.
+
+Live `vid_stride` là khoảng index tối thiểu giữa hai frame chọn suy luận; index
+có thể nhảy do latest-frame, không yêu cầu chia hết stride. Read timeout 3 giây,
+open timeout 5 giây, batch no-frame timeout 15 giây. Reconnect có backoff và tối
+đa 5 lần; batch no-frame timeout có thể kết thúc sớm hơn khi không nhận frame.
+Đóng batch chờ tối đa 6 giây để reader tự nhả capture; vượt hạn là lỗi, worker
+process vẫn được kill/reap. Huỷ HTTP cũng kill worker và nhả semaphore.
+
+Event `frame` giữ JSON result hiện có; `progress.is_live=true`, `percent` và
+`total_frames` là null; source FPS có thể null. `timestampMs` là thời điểm thu
+frame tính từ khi bắt đầu đọc live, không phải PTS file video. Đến duration trả
+`completed` cùng `reason="duration_limit"`; mất kết nối/EOF không được completed.
+Service giới hạn tổng worker lifetime ở duration + 180 giây để dành cold load,
+idle pipe tối đa 180 giây. Không cache model và không tự restart live worker.
+
+RTSP native FFmpeg stderr có thể in URL nguyên văn; worker tắt output native
+này và giữ Python logger qua stderr riêng. Lỗi stream trả thông báo chung,
+không kèm traceback có thể chứa URL. Log reader vẫn vào collector hiện tại theo
+run id. Validation không phản chiếu raw request; URL SecretStr chỉ được bỏ mask
+khi ghi vào stdin worker. Bản ghi source trên backend còn lưu URL gốc trong DB
+local, còn run record/public response không lưu URL bí mật.
+
+`tests/inference/test_stream.py` kiểm contract/redaction, live stride/duration,
+consumer failure, worker cancel/EOF/reap, path validation và checksum entrypoint.
+Đã smoke test luồng HTTP + RTSP loopback H264/TCP với model thật CPU/CUDA;
+chưa kiểm camera vật lý, RTSPS/TLS và network soak dài hạn.

@@ -7,6 +7,7 @@ from pathlib import Path
 from app.adapters.ultralytics.results import serialize_result
 from app.adapters.ultralytics.yolo import load_model
 from app.contracts.prediction import PredictRequest
+from app.media_sources import SourceType, create_media_source
 
 
 # ------------------------------- Chạy video file -----------------------------
@@ -21,31 +22,21 @@ def predict_video(
     Model được nạp một lần. Pacing không cho AI chạy nhanh hơn thời gian video;
     máy chậm vẫn xử lý theo stride và có thể trễ preview. Luôn giải phóng capture.
     """
-    import cv2
-
     model, device = load_model(model_path, request)
-    capture = cv2.VideoCapture(str(video_path), cv2.CAP_FFMPEG)
-    capture.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
-    try:
-        if not capture.isOpened():
-            raise ValueError("Không mở được video.")
-        fps = float(capture.get(cv2.CAP_PROP_FPS))
-        if not 0 < fps < 1000:
-            raise ValueError("Không xác định được frame rate video.")
-        total = max(0, int(capture.get(cv2.CAP_PROP_FRAME_COUNT)))
+    with create_media_source(
+        video_path,
+        source_type=SourceType.VIDEO,
+        vid_stride=request.options.vid_stride,
+    ) as reader:
         started = time.perf_counter()
         processed = 0
-        index = -1
         latest = None
         progress = None
-        while capture.grab():
-            index += 1
-            if index % request.options.vid_stride:
-                continue
-            ok, frame = capture.retrieve()
-            if not ok:
-                raise ValueError("Không giải mã được frame video.")
-            frame_ms = index / fps * 1000
+        for frame, meta in reader:
+            index = meta.frame_index
+            fps = meta.fps
+            total = meta.total_frames
+            frame_ms = meta.timestamp_ms
             delay = frame_ms / 1000 - (time.perf_counter() - started)
             if delay > 0:
                 time.sleep(delay)
@@ -82,5 +73,3 @@ def predict_video(
             raise ValueError("Video không có frame giải mã được.")
         progress = {**progress, "percent": 100}
         publish({"type": "completed", "result": latest, "progress": progress})
-    finally:
-        capture.release()

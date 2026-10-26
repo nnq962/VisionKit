@@ -9,11 +9,27 @@ from fastapi.responses import FileResponse
 from app.api.dependencies import get_source_service
 
 from .models import SourceKind
-from .schemas import SourcePage, SourceRename, SourceResponse
+from .schemas import RtspSourceCreate, SourcePage, SourceRename, SourceResponse
 from .service import SourceService
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 Service = Annotated[SourceService, Depends(get_source_service)]
+
+
+# ------------------------------ Tạo nguồn RTSP -------------------------------
+@router.post("/rtsp", response_model=SourceResponse, status_code=201)
+def create_rtsp(body: RtspSourceCreate, service: Service) -> SourceResponse:
+    """Lưu cấu hình RTSP/RTSPS; response không chứa password hoặc query token."""
+    return service.create_rtsp(body)
+
+
+# ------------------------------ Sửa nguồn RTSP -------------------------------
+@router.put("/{source_id}/rtsp", response_model=SourceResponse)
+def update_rtsp(
+    source_id: UUID, body: RtspSourceCreate, service: Service
+) -> SourceResponse:
+    """Thay URL và tên nguồn RTSP; chỉ áp dụng cho các lượt chạy tạo sau đó."""
+    return service.update_rtsp(str(source_id), body)
 
 
 # ---------------------------- Hàm inspect_source -----------------------------

@@ -10,6 +10,7 @@ import type { YoloParameters } from "@/features/pipelines/yolo/types";
 import { useInferenceRun } from "../use-inference-run";
 import { VideoRunPreview } from "./video-run-preview";
 import { runPreview } from "../api";
+import { RunMetrics } from "./run-metrics";
 
 export function RunWorkspace({
   source,
@@ -123,12 +124,15 @@ export function RunWorkspace({
           {inference.error || run?.error}
         </p>
       )}
+      {supported && (
+        <RunMetrics result={result} progress={run?.progress} video={video} />
+      )}
       {video && run?.progress && (
         <div className="space-y-2">
           <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground tabular-nums">
             <span>
-              {run.progress.frames_processed} frame đã xử lý ·{" "}
-              {run.progress.processing_fps.toFixed(1)} FPS
+              {run.progress.frames_processed} frame đã xử lý · Video gốc{" "}
+              {run.progress.source_fps.toFixed(1)} FPS
             </span>
             <span>
               {run.progress.percent === null
@@ -196,20 +200,12 @@ export function RunWorkspace({
             canConnect={canConnect}
             classify={model?.task === "classify"}
           />
-          {result && (
+          {result && video && (
             <div className="space-y-2 border-t pt-4 text-xs text-muted-foreground">
               <p>
-                {result.device} ·{" "}
-                {video
-                  ? `Frame ${result.frameId ?? 0} · ${((result.timestampMs ?? 0) / 1000).toFixed(2)}s`
-                  : `${(result.elapsedMs / 1000).toFixed(2)} giây`}
+                Frame {result.frameId ?? 0} ·{" "}
+                {((result.timestampMs ?? 0) / 1000).toFixed(2)}s
               </p>
-              {result.classifications?.[0] && (
-                <p>
-                  {result.classifications[0].label} ·{" "}
-                  {(result.classifications[0].confidence * 100).toFixed(1)}%
-                </p>
-              )}
             </div>
           )}
         </aside>

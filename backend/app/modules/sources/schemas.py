@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+
+from app.core.rtsp import validate_rtsp_url
 
 from .models import SourceKind
 
@@ -52,3 +54,16 @@ class SourceRename(BaseModel):
             Chuỗi đã chuẩn hoá hoặc giá trị gốc để Pydantic báo lỗi kiểu.
         """
         return value.strip() if isinstance(value, str) else value
+
+
+# --------------------------- Cấu hình source RTSP ----------------------------
+class RtspSourceCreate(SourceRename):
+    """Lưu tên và URL bí mật; không kết nối camera lúc tạo source."""
+
+    url: SecretStr
+
+    @field_validator("url")
+    @classmethod
+    def valid_url(cls, value: SecretStr) -> SecretStr:
+        """Kiểm URL RTSP/RTSPS mà không ghi credentials vào lỗi validation."""
+        return SecretStr(validate_rtsp_url(value.get_secret_value()))

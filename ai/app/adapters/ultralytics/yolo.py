@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from app.adapters.ultralytics.results import serialize_result
-from app.contracts.prediction import PredictRequest
+from app.contracts.prediction import ModelPredictRequest, PredictRequest
+from app.media_sources import SourceType, create_media_source
 
 
 # ------------------------------ Nạp model local ------------------------------
-def load_model(model_path: Path, request: PredictRequest) -> tuple[Any, str]:
+def load_model(model_path: Path, request: ModelPredictRequest) -> tuple[Any, str]:
     """Kiểm tra restricted loader, ONNX và thiết bị rồi nạp weights một lần cho mỗi lượt chạy."""
     import torch
     from ultralytics import YOLO, YOLOE
@@ -63,16 +64,9 @@ def load_model(model_path: Path, request: PredictRequest) -> tuple[Any, str]:
 # ------------------------------ Chạy ảnh đơn ---------------------------------
 def predict_image(model_path: Path, image_path: Path, request: PredictRequest) -> dict:
     """Giải mã ảnh theo EXIF và predict, trả JSON toạ độ gốc; không vẽ hoặc ghi ảnh."""
-    from PIL import Image, ImageOps
-    from pillow_heif import register_heif_opener
-
     options = request.options
-    register_heif_opener()
-    Image.MAX_IMAGE_PIXELS = 64_000_000
-    with Image.open(image_path) as image:
-        if image.width * image.height > 64_000_000:
-            raise ValueError("Ảnh quá lớn.")
-        image = ImageOps.exif_transpose(image).convert("RGB")
+    with create_media_source(image_path, source_type=SourceType.IMAGE) as reader:
+        image, _ = next(reader)
         started = time.perf_counter()
         model, device = load_model(model_path, request)
         result = model.predict(

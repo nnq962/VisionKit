@@ -3,6 +3,7 @@
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import sys
 import traceback
@@ -22,6 +23,7 @@ def main() -> None:
     from app.adapters.ultralytics.video import predict_video
     from app.contracts.prediction import PredictRequest
 
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     output = sys.stdout
 
     def publish(event: dict) -> None:
