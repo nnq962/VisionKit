@@ -23,7 +23,7 @@ export function SavedSourceList({ selection }: { selection: SourceSelection }) {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="source-search">Tìm trong source đã tải</Label>
+        <Label htmlFor="source-search">Tìm source đã lưu</Label>
         <div className="relative">
           <SearchIcon className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
           <Input
@@ -58,8 +58,8 @@ export function SavedSourceList({ selection }: { selection: SourceSelection }) {
                   <span className="block truncate text-sm font-medium">
                     {item.name}
                   </span>
-                  <span className="block text-xs text-muted-foreground">
-                    {sourceLabel(item.kind)} · Đã lưu trên máy
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {sourceLabel(item.kind)} · {item.kind === "stream" ? item.location : "Đã lưu trên máy"}
                   </span>
                 </span>
                 {active && <CheckIcon className="size-4 shrink-0" />}

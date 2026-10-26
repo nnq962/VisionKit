@@ -75,6 +75,7 @@ export function SourceStep({ selection }: { selection: SourceSelection }) {
         >
           <SourceDetails
             source={selection.source}
+            emptyKind={selection.kind}
             onOpenCamera={
               mode === "saved" ? () => void selection.openCamera() : undefined
             }

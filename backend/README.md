@@ -56,7 +56,7 @@ The previous `backend/db/` implementation has moved into `app/db/` and `app/modu
 | PATCH | `/api/v1/sources/{id}` | Rename via JSON `{ "name": "New name" }` |
 | DELETE | `/api/v1/sources/{id}` | Delete record and its original/preview files; status 204 |
 
-Images are checked by decoded content, not by their filename or declared MIME. Supported image formats: JPEG, PNG, WebP, GIF, BMP, AVIF, HEIC/HEIF, subject to Pillow codec support. Default limits: 20 MiB/file and 64 million pixels. Metadata includes displayed width/height (respecting EXIF orientation), file size, actual format/MIME and original filename. File names on disk are generated UUIDs. Saving RTSP and AI processing are not implemented by these APIs yet.
+Images are checked by decoded content, not by their filename or declared MIME. Supported image formats: JPEG, PNG, WebP, GIF, BMP, AVIF, HEIC/HEIF, subject to Pillow codec support. Default limits: 20 MiB/file and 64 million pixels. Metadata includes displayed width/height (respecting EXIF orientation), file size, actual format/MIME and original filename. File names on disk are generated UUIDs. These upload APIs handle local media files. RTSP configuration, preview and inference use the separate endpoints documented below.
 
 Data lives in:
 
@@ -160,7 +160,7 @@ States: queued → running → completed/failed/cancelled. At most four active/q
 
 Run snapshots and result JSON expire after 24 hours. Startup and a ten-minute sweep clean expired terminal records/files. Expired records return 410 before cleanup, 404 after; saved library sources/models are unaffected. Backend restart marks interrupted jobs failed. These local DB/file operations are not atomic across power failure; orphan reconciliation remains future work.
 
-Completed JSON contains original-coordinate bbox/keypoints, class scores, actual device, timing and classification top5. Segmentation/OBB polygons are retained in JSON; current canvas UI displays bbox/keypoints only. No RTSP/webcam inference, tracking, model prompting or persistent run library yet.
+Completed JSON contains original-coordinate bbox/keypoints, class scores, actual device, timing and classification top5. Segmentation/OBB polygons are retained in JSON; current canvas UI displays bbox/keypoints only. RTSP inference uses the separate stream-run endpoint below. Webcam inference, tracking, model prompting and a persistent run library are not implemented.
 
 ## Streaming video runs
 
@@ -172,8 +172,7 @@ The backend explicitly depends on `websockets` for Uvicorn's WebSocket runtime. 
 
 ## Centralized runtime logs
 
-`GET /api/v1/logs` is the single read API for a future web log viewer. No UI is
-included. A separate backend task collects AI logs every second, independently of
+`GET /api/v1/logs` is the read API used by the workspace runtime log viewer. A separate backend task collects AI logs every second, independently of
 inference and browser connections. Existing terminal handlers remain in place.
 Capture includes Python `app` logs, Uvicorn server/access logs and AI worker stderr;
 it is not a mirror of arbitrary OS terminal output.
@@ -253,7 +252,8 @@ failure, and unused model lease counters are removed when their count reaches ze
 ## Nguồn RTSP và API lượt chạy live
 
 Backend đã hỗ trợ lưu cấu hình RTSP/RTSPS và điều phối inference qua endpoint
-nội bộ riêng của AI. Frontend chọn source/preview live chưa được nối.
+nội bộ riêng của AI. Web đã có chọn nguồn và preview WebRTC qua MediaMTX;
+phần khởi chạy inference RTSP trên web chưa được nối.
 Không cần migration: bảng `sources` đã có kind `stream`, run lưu JSON có default
 cho trường mới nên ảnh/video cũ vẫn đọc được.
 
@@ -275,8 +275,9 @@ SQLite local để backend cung cấp cho AI; chưa có mã hoá bí mật trong
 - `GET /api/v1/sources?kind=stream`: danh sách dùng response đã che.
 - `GET /api/v1/sources/{id}`, `PATCH /api/v1/sources/{id}` (đổi tên),
   `DELETE /api/v1/sources/{id}`: dùng API nguồn hiện có.
-- Tạo/sửa không mở camera hoặc xác nhận camera đang online. URL chỉ nhận
-  `rtsp://`/`rtsps://`, có host/port hợp lệ, không fragment/control/space.
+- Tạo cấu hình không mở camera. Sửa URL cập nhật path preview đang hoạt động;
+  trạng thái/xác thực đọc qua API preview, không suy đoán từ việc lưu thành công.
+  URL chỉ nhận `rtsp://`/`rtsps://`, có host/port hợp lệ, không fragment/control/space.
 - Không nhận HTTP/RTMP/YouTube/file qua API này. Nguồn LAN/private IP là hợp lệ.
 - Lỗi validation chỉ trả vị trí/loại lỗi, không phản chiếu giá trị đầu vào.
 
@@ -309,9 +310,10 @@ Dùng tiếp các API sẵn có:
 - `DELETE /api/v1/runs/{id}`: dừng run, huỷ HTTP AI và kill/reap worker.
 - Đến hạn: `completed`, `completion_reason="duration_limit"`. Mất camera/stream
   EOF trước terminal: `failed`. Chủ động dừng: `cancelled`. Frame cuối được giữ.
-- Live chưa có preview phát trên trình duyệt: `/runs/{id}/preview` trả 404 và
-  `source_metadata.preview_available=false`. Không trả URL/password qua run JSON
-  hay WebSocket. Frontend cần xử lý `source_kind="stream"` và nullable FPS khi nối.
+- `/runs/{id}/preview` không vận chuyển video live: trả 404 với
+  `source_metadata.preview_available=false`. Web xem video qua MediaMTX/WebRTC
+  độc lập với run events. Không trả URL/password qua run JSON hay WebSocket.
+  Khi nối inference RTSP lên web cần xử lý `source_kind="stream"` và nullable FPS.
 
 URL camera được snapshot riêng trong task lúc tạo job. Sửa/xoá source không đổi
 URL hoặc tự dừng job đang chạy; muốn dừng phải cancel run. Backend restart đánh
@@ -330,3 +332,69 @@ queue, EOF/error, expiry và restart. Bộ AI có test contract/adapter/worker r
 Đã smoke test RTSP H264/RTP interleaved TCP từ fixture loopback với YOLO26s thật
 trên CPU/CUDA, gồm hết hạn, cancel và camera không kết nối được. Đây chưa phải
 kiểm chứng camera vật lý, RTSPS/TLS hoặc soak nhiều giờ.
+
+## Preview RTSP qua MediaMTX / WebRTC
+
+Backend không giải mã video, không tạo JPEG và không proxy RTP. MediaMTX v1.21.3 chạy Docker
+kéo RTSP/TCP bằng URL từ source DB, chia sẻ một path/camera và chuyển tiếp codec
+sang WebRTC. Browser dùng WHEP signaling qua backend rồi nhận media trực tiếp từ
+MediaMTX. Cài relay/chạy local theo README gốc.
+
+- `POST /api/v1/streams/temporary/sessions`: JSON `{preview_id: UUID, url: RTSP}`,
+  tạo lease để kiểm tra URL chưa lưu và phát WebRTC khi MediaMTX đọc được luồng.
+  Không cần tên/source ID đã lưu; không tạo bản ghi Source, không ghi URL vào DB.
+  URL chỉ giữ RAM/MediaMTX đến khi lease cuối đóng/hết hạn. Dùng namespace riêng
+  và giới hạn bốn path chung; lỗi validation không phản chiếu credentials.
+- `POST /api/v1/streams/{source_id}/sessions`: tạo lease, đăng ký path nếu cần;
+  response có `id` và URL WHEP cùng origin, không có URL/password camera.
+- `GET /api/v1/streams/sessions/{id}`: gia hạn lease 45 giây và trả trạng thái,
+  `auth`, codec, lỗi đã phân loại. Web poll tuần tự mỗi hai giây.
+- `POST /api/v1/streams/sessions/{id}/whep`: `application/sdp` tối đa 256 KiB;
+  trả SDP answer. Backend giữ WHEP Location và chỉ nhận cùng origin/path relay.
+- `DELETE /api/v1/streams/sessions/{id}`: đóng WHEP; viewer cuối gỡ path/ngắt RTSP.
+  Browser biến mất thì task dọn lease mỗi năm giây. Tối đa bốn path camera.
+
+Camera chỉ được báo đọc thành công khi `available/ready` của Control API là true;
+`online` không đủ. API `paths/static-sources/get` có `lastError`: 401/403 được
+phân loại `auth_failed`, không retry vô hạn. Lỗi mạng là trạng thái chưa xác minh,
+MediaMTX tiếp tục reconnect. Không suy đoán mật khẩu đúng từ URL hoặc việc online.
+Không trả raw lastError/config MediaMTX ra browser/log vì có thể chứa credentials.
+Đọc được camera anonymous cũng là `auth=accepted`, không chứng minh đã dùng password.
+
+Sửa URL khởi động lại path preview, giữ các lease. Xoá camera đóng mọi lease của
+camera đó. Các inference run vẫn dùng reader/URL snapshot độc lập như trước.
+Backend restart mất registry lease; nên chạy cùng lifecycle launcher MediaMTX.
+Dùng một backend worker; không chia sẻ relay namespace `visionkit_*` với backend
+khác. Biến `VISIONKIT_MEDIAMTX_API_URL` / `VISIONKIT_MEDIAMTX_WEBRTC_URL` chỉ trỏ
+HTTP service nội bộ, mặc định loopback 9997 / 8889. API MediaMTX không công khai.
+
+`tests/streams` có unit contract/lease/redaction và integration MediaMTX thật với
+camera H264/TCP Basic auth loopback, gồm credentials đúng/sai và sửa URL phục hồi.
+FFmpeg chỉ tạo bitstream fixture rồi thoát, không chạy trong pipeline preview.
+Chưa kiểm camera vật lý, RTSPS/TLS hoặc network soak nhiều giờ.
+
+Relay Docker dùng image chính thức đã pin digest trong `compose.yaml`. Launcher
+chỉ quản lý container/network của project hiện tại, không mount dữ liệu camera,
+model hoặc database vào container. Port host chỉ publish trên loopback. Khi dùng
+launcher, URL camera loopback được ánh xạ nội bộ sang `host.docker.internal`; URL
+đã lưu trong DB không bị sửa. `VISIONKIT_MEDIAMTX_SOURCE_HOST` cấu hình host này
+cho relay quản lý ngoài launcher. Bật `VISIONKIT_RUN_DOCKER_TESTS=1` để chạy test
+integration Docker, gồm camera RTSP Basic auth đúng/sai, sửa URL và cleanup.
+
+## AI through the shared RTSP relay
+
+`POST /api/v1/runs/live` accepts `model_id`, exactly one `source_id` or `preview_id`,
+`options` and `duration_seconds` (1–14400, default 3600). The preview ID must belong
+to a temporary session created by the RTSP check flow. Backend keeps a separate
+MediaMTX path lease for AI, then passes `VISIONKIT_MEDIAMTX_RTSP_URL/visionkit_<id>`
+(or `visionkit_temporary_<id>`) to the internal AI stream API. Only MediaMTX opens
+the original camera; browser and AI read the same relay. The run record contains
+IDs and JSON metadata, never camera credentials or video frames.
+
+The AI lease survives browser viewer expiry and route navigation. Terminal,
+cancel, failed validation and shutdown release it; the last lease removes the
+path and temporary URL. Editing/deleting a saved camera with active relay AI
+returns 409. `options.max_fps` limits live inference to 1–60 FPS (default 5).
+The older `/runs/stream` endpoint remains a direct-camera compatibility API;
+the web uses `/runs/live`. JSON run events use the existing WebSocket, with GET
+polling fallback. Inference concurrency remains one: additional runs queue.

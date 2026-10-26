@@ -1,11 +1,12 @@
 /* Local uploads and API content URLs both use the native media preview. */
 /* eslint-disable @next/next/no-img-element */
+import { VideoStreamPreview } from "@/features/video-stream";
 import { VideoSourcePreview } from "./video-source-preview";
 import { useEffect, useRef } from "react";
 import { CameraIcon, FileImageIcon, FilmIcon, RadioIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatBytes, formatDuration } from "../media-metadata";
-import { sourceLabel, type VisionSource } from "../types";
+import { sourceLabel, type SourceKind, type VisionSource } from "../types";
 
 function WebcamPreview({ stream }: { stream: MediaStream }) {
   const video = useRef<HTMLVideoElement>(null);
@@ -32,10 +33,36 @@ function WebcamPreview({ stream }: { stream: MediaStream }) {
 export function SourceDetails({
   source,
   onOpenCamera,
+  emptyKind,
 }: {
   source: VisionSource | null;
   onOpenCamera?: () => void;
+  emptyKind?: SourceKind;
 }) {
+  if (source?.kind === "stream" || (!source && emptyKind === "stream")) {
+    return (
+      <aside className="min-w-0 space-y-6 border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6" aria-label="Thông tin camera">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold">Xem trực tiếp</h3>
+          <span className="text-xs text-muted-foreground">RTSP / RTSPS</span>
+        </div>
+        {source && (source.saved || source.streamPreview) ? <VideoStreamPreview sourceId={source.id} name={source.name} /> : (
+          <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-lg bg-muted px-6 text-center text-muted-foreground">
+            <CameraIcon className="size-8" strokeWidth={1.5} />
+            <p className="text-sm font-medium text-foreground">Chưa kết nối camera</p>
+            <p className="text-xs leading-5">Nhập URL RTSP rồi bấm kiểm tra để xem trực tiếp.</p>
+          </div>
+        )}
+        <dl className="divide-y text-xs">
+          {[["Phát trên web", "WebRTC qua MediaMTX"], ["Khôi phục kết nối", "Tự động"], ["Khi chuyển trang", "Giữ kết nối"]].map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-4 py-3 first:pt-0 last:pb-0">
+              <dt className="text-muted-foreground">{label}</dt><dd className="text-right font-medium">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </aside>
+    );
+  }
   const Icon =
     source?.kind === "image" || source?.kind === "screen"
       ? FileImageIcon
@@ -127,7 +154,7 @@ export function SourceDetails({
                 ? [
                     [
                       "Thời lượng",
-                      source.kind === "stream" || source.kind === "webcam"
+                      source.kind === "webcam"
                         ? "Live · không cố định"
                         : formatDuration(source.duration),
                     ],

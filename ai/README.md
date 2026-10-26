@@ -49,7 +49,7 @@ Metadata phân biệt `family` (YOLO/YOLOE), `model_series` (YOLO26/YOLO11/YOLOv
 
 Ultralytics handles `.pt` and ONNX; pinned `onnxruntime<1.24` retains Python 3.10 wheel support. HEIC/HEIF uses pillow-heif; input decoding applies EXIF orientation before inference. PT uses the restricted loader with no unsafe fallback or auto-install/download. ONNX external tensors and fixed batch other than 1 are rejected. Auto chooses CUDA/MPS/CPU for PT; ONNX currently runs CPU. Explicit unavailable devices return an actionable error rather than silently falling back. The subprocess is not an OS sandbox; keep this local service for trusted model artifacts.
 
-Results normalize detections/pose keypoints into original image pixel coordinates for the reusable web canvas. Classification returns top5; segmentation/OBB additionally retain polygons. Pose points are rendered without assuming custom skeleton ordering. YOLOE models requiring text/visual prompts are not configured by this MVP. Video files use the streaming endpoint below; webcam/RTSP inference is not connected yet.
+Results normalize detections/pose keypoints into original image pixel coordinates for the reusable web canvas. Classification returns top5; segmentation/OBB additionally retain polygons. Pose points are rendered without assuming custom skeleton ordering. YOLOE models requiring text/visual prompts are not configured by this MVP. Video files use the file streaming endpoint below; RTSP inference uses its separate internal stream endpoint. Webcam inference is not connected.
 
 ## Video file inference
 
@@ -86,7 +86,9 @@ not produce log entries in the buffer.
 Ảnh/video inference đã dùng [`app/media_sources`](app/media_sources/README.md).
 Module trả frame BGR và metadata; Ultralytics chỉ nhận frame để suy luận.
 Pillow giữ hỗ trợ HEIC/HEIF/EXIF; video giữ stride, rotation và pacing hiện tại.
-Nguồn mạng có reader Python nội bộ nhưng chưa được mở trong hợp đồng HTTP.
+RTSP/RTSPS inference dùng endpoint nội bộ riêng ở phần dưới. Các reader mạng
+khác chưa được mở qua HTTP. Reader AI phục vụ suy luận, độc lập với preview
+MediaMTX/WebRTC; không xoá decoder AI khi thay đổi cách phát video trên web.
 YouTube là extra tùy chọn, không bắt buộc để chạy ảnh/video.
 
 ## Inference RTSP nội bộ
@@ -127,3 +129,9 @@ local, còn run record/public response không lưu URL bí mật.
 consumer failure, worker cancel/EOF/reap, path validation và checksum entrypoint.
 Đã smoke test luồng HTTP + RTSP loopback H264/TCP với model thật CPU/CUDA;
 chưa kiểm camera vật lý, RTSPS/TLS và network soak dài hạn.
+
+Web live runs supply the MediaMTX relay URL to this stream endpoint, sharing the
+camera connection with WebRTC preview. `options.max_fps` (1–60, default 5) paces
+prediction, reading the newest slot after each wait. Capture continues replacing
+old frames while the model runs; no inference backlog is accumulated. Video
+frames are decoded only inside AI; backend receives JSON results.

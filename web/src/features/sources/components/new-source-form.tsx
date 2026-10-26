@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { RtspSourceInput } from "./rtsp-source-input";
 import { VideoSourceInput } from "./video-source-input";
 import { BrowserSourceInput } from "./browser-source-input";
 import { formatBytes } from "../media-metadata";
@@ -38,35 +39,23 @@ export function NewSourceForm({
     }
   }
 
-  function useLocation() {
+  function useYoutubeLocation() {
     setError("");
     const value = location.trim();
     try {
       const url = new URL(value);
       const valid =
-        kind === "stream"
-          ? ["rtsp:", "rtmp:", "http:", "https:"].includes(url.protocol)
-          : ["http:", "https:"].includes(url.protocol) &&
-            [
-              "youtube.com",
-              "www.youtube.com",
-              "m.youtube.com",
-              "youtu.be",
-            ].includes(url.hostname) &&
-            (url.hostname === "youtu.be"
-              ? url.pathname.length > 1
-              : Boolean(url.searchParams.get("v")) ||
-                /^\/(shorts|live|embed)\/.+/.test(url.pathname));
+        ["http:", "https:"].includes(url.protocol) &&
+        ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"].includes(url.hostname) &&
+        (url.hostname === "youtu.be"
+          ? url.pathname.length > 1
+          : Boolean(url.searchParams.get("v")) || /^\/(shorts|live|embed)\/.+/.test(url.pathname));
       if (!valid) throw new Error();
     } catch {
-      setError(
-        kind === "youtube"
-          ? "Nhập URL video YouTube hợp lệ."
-          : "Nhập URL RTSP, RTMP hoặc HTTP(S) hợp lệ.",
-      );
+      setError("Nhập URL video YouTube hợp lệ.");
       return;
     }
-    selection.selectRemote(kind, value);
+    selection.selectYoutube(value);
   }
 
   return (
@@ -74,6 +63,7 @@ export function NewSourceForm({
       <div className="space-y-2">
         <Label htmlFor="source-kind">Loại source</Label>
         <Select
+          disabled={selection.saving}
           value={kind}
           onValueChange={(value) => {
             selection.setKind(value as SourceKind);
@@ -99,7 +89,9 @@ export function NewSourceForm({
         </Select>
         <p className="text-xs leading-5 text-muted-foreground">{hint}</p>
       </div>
-      {kind === "video" ? (
+      {kind === "stream" ? (
+        <RtspSourceInput selection={selection} />
+      ) : kind === "video" ? (
         <VideoSourceInput selection={selection} />
       ) : isFile ? (
         <div className="space-y-2">
@@ -183,9 +175,7 @@ export function NewSourceForm({
         <BrowserSourceInput kind={kind} selection={selection} />
       ) : (
         <div className="space-y-2">
-          <Label htmlFor="source-location">
-            {kind === "youtube" ? "URL video YouTube" : "Địa chỉ stream"}
-          </Label>
+          <Label htmlFor="source-location">URL video YouTube</Label>
           <Input
             id="source-location"
             className="h-9"
@@ -194,11 +184,7 @@ export function NewSourceForm({
               selection.setLocation(event.target.value);
               setError("");
             }}
-            placeholder={
-              kind === "youtube"
-                ? "https://www.youtube.com/watch?v=…"
-                : "rtsp://192.168.1.100:554/stream"
-            }
+            placeholder="https://www.youtube.com/watch?v=…"
             inputMode="url"
           />
           <p className="text-xs leading-5 text-muted-foreground">
@@ -208,7 +194,7 @@ export function NewSourceForm({
             type="button"
             variant="outline"
             className="mt-2"
-            onClick={useLocation}
+            onClick={useYoutubeLocation}
           >
             Dùng source này
           </Button>

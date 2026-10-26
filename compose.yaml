@@ -1,0 +1,22 @@
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.3@sha256:59e43552f3be43695b70c19424dc2a42fcec18075f88d91561a24ac5d70a586c
+    command: ["/mediamtx.yml"]
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./media/mediamtx.yml:/mediamtx.yml:ro
+    environment:
+      # Match the internal ICE port to the published port for correct candidates.
+      MTX_WEBRTCLOCALUDPADDRESS: :${VISIONKIT_MEDIA_ICE_PORT:-8189}
+      MTX_WEBRTCLOCALTCPADDRESS: :${VISIONKIT_MEDIA_ICE_PORT:-8189}
+    ports:
+      - "127.0.0.1:${VISIONKIT_MEDIA_API_PORT:-9997}:9997/tcp"
+      - "127.0.0.1:${VISIONKIT_MEDIA_HTTP_PORT:-8889}:8889/tcp"
+      - "127.0.0.1:${VISIONKIT_MEDIA_RTSP_PORT:-8554}:8554/tcp"
+      - "127.0.0.1:${VISIONKIT_MEDIA_ICE_PORT:-8189}:${VISIONKIT_MEDIA_ICE_PORT:-8189}/udp"
+      - "127.0.0.1:${VISIONKIT_MEDIA_ICE_PORT:-8189}:${VISIONKIT_MEDIA_ICE_PORT:-8189}/tcp"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

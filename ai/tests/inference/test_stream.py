@@ -128,8 +128,8 @@ class StreamAdapterTests(unittest.TestCase):
         model = CheckingModel()
         request = request_fixture(options={"vid_stride": 3})
         events = []
-        # started, loop1, elapsed1, loop2(skip), loop3, elapsed3, loop4(end).
-        clock = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.1]
+        # Clock tăng đều; sleep chỉ được ghi nhận để test không chờ thời gian thật.
+        clock = [index / 100 for index in range(1, 15)] + [1.1]
         with (
             patch(
                 "app.adapters.ultralytics.stream.load_model",
@@ -143,6 +143,7 @@ class StreamAdapterTests(unittest.TestCase):
                 "app.adapters.ultralytics.stream.time.perf_counter", side_effect=clock
             ),
             patch("app.adapters.ultralytics.stream.time.time", return_value=100),
+            patch("app.adapters.ultralytics.stream.time.sleep") as sleep,
         ):
             predict_stream(Path("model.pt"), request, events.append)
         self.assertEqual([e["result"]["frameId"] for e in events], [1, 7, 7])
@@ -151,6 +152,42 @@ class StreamAdapterTests(unittest.TestCase):
         self.assertIsNone(events[-1]["progress"]["total_frames"])
         self.assertIsNone(events[-1]["progress"]["percent"])
         self.assertEqual(len(model.shapes), 2)
+        self.assertTrue(sleep.called)
+        self.assertTrue(batch.closed)
+
+    def test_fps_cap_waits_before_reading_latest_slot(self) -> None:
+        """Hai frame mỗi giây, chỉ đọc slot sau khi chờ và không suy luận quá hạn."""
+        batch = FakeBatch()
+        batch.indices = iter(range(100))
+        clock = [0.0]
+        waits = []
+        events = []
+
+        def sleep(seconds: float) -> None:
+            """Tiến clock giả thay vì chờ thực để kiểm nhịp suy luận."""
+            waits.append(seconds)
+            clock[0] += seconds
+
+        with (
+            patch(
+                "app.adapters.ultralytics.stream.load_model",
+                return_value=(CheckingModel(), "cpu"),
+            ),
+            patch("app.adapters.ultralytics.stream.create_media_source"),
+            patch(
+                "app.adapters.ultralytics.stream.StreamBatchReader", return_value=batch
+            ),
+            patch(
+                "app.adapters.ultralytics.stream.time.perf_counter",
+                side_effect=lambda: clock[0],
+            ),
+            patch("app.adapters.ultralytics.stream.time.sleep", side_effect=sleep),
+        ):
+            predict_stream(
+                Path("model.pt"), request_fixture(options={"max_fps": 2}), events.append
+            )
+        self.assertEqual([event["result"]["frameId"] for event in events], [0, 1, 1])
+        self.assertEqual(waits, [0.5, 0.5])
         self.assertTrue(batch.closed)
 
     def test_publish_failure_closes_source(self) -> None:

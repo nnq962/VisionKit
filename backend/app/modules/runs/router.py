@@ -19,7 +19,7 @@ from pydantic import ValidationError
 
 from app.core.errors import SourceError
 
-from .schemas import RunOptions, RunRecord, StreamRunCreate
+from .schemas import LiveRunCreate, RunOptions, RunRecord, StreamRunCreate
 from .service import RunService
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -29,6 +29,21 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 def get_service(request: Request) -> RunService:
     """Lấy service đang sống trong app, không mở thêm kết nối hoặc nạp model."""
     return request.app.state.runs
+
+
+# --------------------------- AI camera qua relay -----------------------------
+@router.post("/live", response_model=RunRecord, status_code=202)
+async def create_live_run(
+    body: LiveRunCreate, service: Annotated[RunService, Depends(get_service)]
+) -> RunRecord:
+    """Chạy MediaMTX path của camera đã lưu hoặc preview tạm; video không qua Python."""
+    return await service.create_live(
+        body.model_id,
+        body.options,
+        str(body.source_id) if body.source_id else None,
+        str(body.preview_id) if body.preview_id else None,
+        body.duration_seconds,
+    )
 
 
 # ----------------------------- Chạy nguồn RTSP -------------------------------

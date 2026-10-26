@@ -3,10 +3,11 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from app.api.dependencies import get_source_service
+from app.core.errors import SourceError
 
 from .models import SourceKind
 from .schemas import RtspSourceCreate, SourcePage, SourceRename, SourceResponse
@@ -25,11 +26,16 @@ def create_rtsp(body: RtspSourceCreate, service: Service) -> SourceResponse:
 
 # ------------------------------ Sửa nguồn RTSP -------------------------------
 @router.put("/{source_id}/rtsp", response_model=SourceResponse)
-def update_rtsp(
-    source_id: UUID, body: RtspSourceCreate, service: Service
+async def update_rtsp(
+    source_id: UUID, body: RtspSourceCreate, service: Service, request: Request
 ) -> SourceResponse:
-    """Thay URL và tên nguồn RTSP; chỉ áp dụng cho các lượt chạy tạo sau đó."""
-    return service.update_rtsp(str(source_id), body)
+    """Lưu cấu hình camera và khởi động lại preview, không đổi inference đang chạy."""
+    async with request.app.state.streams.lock:
+        if request.app.state.streams.inference_active(str(source_id)):
+            raise SourceError(409, "Dừng AI trước khi thay cấu hình camera.")
+        response = service.update_rtsp(str(source_id), body)
+    await request.app.state.streams.restart(str(source_id))
+    return response
 
 
 # ---------------------------- Hàm inspect_source -----------------------------
@@ -150,7 +156,13 @@ def rename_source(
 
 # -------------------------------- Xoá source ---------------------------------
 @router.delete("/{source_id}", status_code=204)
-def delete_source(source_id: UUID, service: Service) -> Response:
+async def delete_source(
+    source_id: UUID, service: Service, request: Request
+) -> Response:
     """Xoá source và file gốc/preview tương ứng; trả response rỗng khi thành công."""
-    service.delete(str(source_id))
+    async with request.app.state.streams.lock:
+        if request.app.state.streams.inference_active(str(source_id)):
+            raise SourceError(409, "Dừng AI trước khi xoá camera.")
+        service.delete(str(source_id))
+    await request.app.state.streams.remove(str(source_id))
     return Response(status_code=204)

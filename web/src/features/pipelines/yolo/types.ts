@@ -7,6 +7,8 @@ export type YoloParameters = {
   classes: string[];
   maxDet: string;
   vidStride: string;
+  liveFps: string;
+  liveMinutes: string;
   agnosticNms: boolean;
 };
 
@@ -19,5 +21,7 @@ export const defaultParameters: YoloParameters = {
   classes: [],
   maxDet: "300",
   vidStride: "1",
+  liveFps: "5",
+  liveMinutes: "60",
   agnosticNms: false,
 };

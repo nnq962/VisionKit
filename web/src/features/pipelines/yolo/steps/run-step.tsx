@@ -28,6 +28,7 @@ export function RunStep({
     ...(!classify
       ? [["Confidence / IoU", `${parameters.confidence} / ${parameters.iou}`]]
       : []),
+    ...(sourceKind === "stream" ? [["Giới hạn AI", `${parameters.liveFps} FPS`], ["Giới hạn chạy", `${parameters.liveMinutes} phút`]] : []),
     ["Kích thước đầu vào", imageSizeLabel(parameters.imageSize)],
     ["Thiết bị", deviceLabels[parameters.device]],
     [

@@ -18,3 +18,4 @@ class PredictOptions(BaseModel):
     max_det: int = Field(default=300, ge=1, le=3000)
     agnostic_nms: bool = False
     vid_stride: int = Field(default=1, ge=1, le=120)
+    max_fps: float = Field(default=5, ge=1, le=60)

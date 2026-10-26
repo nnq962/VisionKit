@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { PencilIcon, Trash2Icon } from "lucide-react";
+import { PencilIcon, Settings2Icon, Trash2Icon } from "lucide-react";
+import { RtspCameraForm } from "./rtsp-camera-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,14 +12,17 @@ export function SavedSourceActions({
   selection,
 }: {
   source: VisionSource;
-  selection: Pick<SourceSelection, "saving" | "rename" | "remove">;
+  selection: Pick<SourceSelection, "saving" | "rename" | "remove" | "configureRtsp">;
 }) {
-  const [mode, setMode] = useState<"view" | "rename" | "delete">("view");
+  const [mode, setMode] = useState<"view" | "rename" | "delete" | "configure">("view");
   const [name, setName] = useState(source.name);
   return (
     <div className="space-y-3 px-3 pb-4">
       {mode === "view" ? (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {source.kind === "stream" && <Button variant="ghost" size="sm" disabled={selection.saving} onClick={() => setMode("configure")}>
+            <Settings2Icon /> Sửa cấu hình
+          </Button>}
           <Button
             variant="ghost"
             size="sm"
@@ -41,6 +45,16 @@ export function SavedSourceActions({
             Xoá
           </Button>
         </div>
+      ) : mode === "configure" ? (
+        <RtspCameraForm
+          initialName={source.name} currentLocation={source.location} busy={selection.saving}
+          onCancel={() => setMode("view")}
+          onSave={async (nextName, url) => {
+            const ok = await selection.configureRtsp(nextName, url, source.id);
+            if (ok) setMode("view");
+            return ok;
+          }}
+        />
       ) : mode === "rename" ? (
         <form
           className="space-y-2"
@@ -76,7 +90,7 @@ export function SavedSourceActions({
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-destructive">
-            Xoá source này và file đã lưu trên máy?
+            {source.kind === "stream" ? "Xoá cấu hình camera này khỏi thư viện?" : "Xoá source này và file đã lưu trên máy?"}
           </p>
           <div className="flex gap-2">
             <Button

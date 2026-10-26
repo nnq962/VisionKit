@@ -85,7 +85,7 @@ async function send(path: string, options?: RequestInit): Promise<Response> {
       typeof body?.detail === "string"
         ? body.detail
         : Array.isArray(body?.detail)
-          ? "Dữ liệu chưa hợp lệ. Kiểm tra tên và tệp."
+          ? "Dữ liệu chưa hợp lệ. Kiểm tra thông tin đã nhập."
           : "Không kết nối được API. Kiểm tra backend rồi thử lại.";
     throw new Error(message);
   }
@@ -154,4 +154,16 @@ export async function inspectImage(file: File) {
     height: Number(response.headers.get("X-Image-Height")),
     format: response.headers.get("X-Image-Format") ?? "HEIC",
   };
+}
+
+export async function configureRtspSource(name: string, url: string, id?: string) {
+  return fromRecord(await request<SourceRecord>(id ? `/${encodeURIComponent(id)}/rtsp` : "/rtsp", {
+    method: id ? "PUT" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, url }),
+  }));
+}
+
+export async function getSource(id: string) {
+  return fromRecord(await request<SourceRecord>(`/${encodeURIComponent(id)}`));
 }

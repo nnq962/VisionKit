@@ -18,11 +18,13 @@ export function SourceDetailSheet({
   onClose,
 }: {
   source: VisionSource | null;
-  selection: Pick<SourceSelection, "saving" | "rename" | "remove">;
+  selection: Pick<SourceSelection, "saving" | "rename" | "remove" | "configureRtsp">;
   error: string;
   onClose: () => void;
 }) {
-  const storage: [string, string][] = source
+  const storage: [string, string][] = source?.kind === "stream"
+    ? [["ID", source.id], ["Địa chỉ camera", source.location], ["Ngày thêm", source.createdAt ? new Date(source.createdAt).toLocaleString("vi-VN") : "—"]]
+    : source
     ? [
         ["ID", source.id],
         ["Tệp gốc", source.originalFilename ?? "Chưa ghi nhận"],
@@ -87,9 +89,9 @@ export function SourceDetailSheet({
         }}
       >
         <SheetHeader className="border-b p-4 pr-14 md:p-6">
-          <SheetTitle>Chi tiết source</SheetTitle>
+          <SheetTitle>{source?.kind === "stream" ? source.name : "Chi tiết source"}</SheetTitle>
           <SheetDescription className="sr-only">
-            Xem trước, đổi tên hoặc xoá source đã lưu.
+            Xem trước, sửa cấu hình, đổi tên hoặc xoá source đã lưu.
           </SheetDescription>
         </SheetHeader>
         {source && (

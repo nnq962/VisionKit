@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ------------------------------ Hạn dùng lượt chạy ---------------------------
@@ -26,6 +26,7 @@ class RunOptions(BaseModel):
     max_det: int = Field(default=300, ge=1, le=3000)
     agnostic_nms: bool = False
     vid_stride: int = Field(default=1, ge=1, le=120)
+    max_fps: float = Field(default=5, ge=1, le=60)
 
 
 # ------------------------------- Bản ghi chạy --------------------------------
@@ -57,3 +58,22 @@ class StreamRunCreate(BaseModel):
     source_id: UUID
     options: RunOptions = Field(default_factory=RunOptions)
     duration_seconds: int = Field(default=3600, ge=1, le=14400, strict=True)
+
+
+# ---------------------------- Chạy AI từ relay -------------------------------
+class LiveRunCreate(BaseModel):
+    """Chọn đúng một camera thư viện hoặc preview tạm; không nhận URL từ browser."""
+
+    model_config = ConfigDict(extra="forbid")
+    model_id: str = Field(min_length=1, max_length=255)
+    source_id: UUID | None = None
+    preview_id: UUID | None = None
+    options: RunOptions = Field(default_factory=RunOptions)
+    duration_seconds: int = Field(default=3600, ge=1, le=14400, strict=True)
+
+    @model_validator(mode="after")
+    def one_source(self) -> "LiveRunCreate":
+        """Từ chối nguồn thiếu hoặc mơ hồ trước khi giữ relay/model."""
+        if (self.source_id is None) == (self.preview_id is None):
+            raise ValueError("Chọn đúng một camera hoặc preview.")
+        return self

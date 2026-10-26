@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useVideoStreamStore } from "@/features/video-stream/video-stream-provider";
 import { useSourceLibrary } from "./use-source-library";
 import { useSourceDrafts } from "./use-source-drafts";
 import { captureScreenFrame } from "./browser-capture";
+import { inspectRtspUrl } from "./rtsp-configuration";
 import { readMediaMetadata } from "./media-metadata";
-import { deleteSource, inspectImage, renameSource, saveSource } from "./api";
+import { configureRtspSource, deleteSource, inspectImage, renameSource, saveSource } from "./api";
 import type { SourceKind, VisionSource } from "./types";
 
 export function useSourceSelectionState() {
+  const videoStreams = useVideoStreamStore();
   const drafts = useSourceDrafts();
   const { source, saveName, saveEnabled } = drafts;
   const savedSources = useSourceLibrary();
@@ -80,6 +83,7 @@ export function useSourceSelectionState() {
   }
   function discardDraft() {
     stopCamera();
+    if (source?.streamPreview && !source.saved) videoStreams.discardTemporary(source.id);
     if (source?.previewUrl?.startsWith("blob:"))
       URL.revokeObjectURL(source.previewUrl);
     drafts.discardDraft();
@@ -268,19 +272,14 @@ export function useSourceSelectionState() {
     }
   }
 
-  function selectRemote(kind: SourceKind, location: string) {
+  function selectYoutube(location: string) {
     begin({
       id: crypto.randomUUID(),
-      kind,
-      name: kind === "webcam" ? `Camera ${location}` : location,
+      kind: "youtube",
+      name: location,
       location,
       status: "pending",
-      format:
-        kind === "youtube"
-          ? "YouTube"
-          : kind === "webcam"
-            ? "Camera"
-            : location.split(":")[0].toUpperCase(),
+      format: "YouTube",
     });
   }
 
@@ -299,6 +298,66 @@ export function useSourceSelectionState() {
       const saved = await saveSource(source, saveName.trim());
       savedSources.remember(saved, !source.saved);
       drafts.applySaved(source.id, saved);
+      setNotice(`Đã lưu “${saved.name}”.`);
+      return true;
+    } catch (error) {
+      setSaveError((error as Error).message);
+      return false;
+    } finally {
+      mutation.current = false;
+      setSaving(false);
+    }
+  }
+
+  function updateRtspDraft(name: string, url: string) {
+    drafts.setSaveName(name);
+    if (url !== drafts.location) {
+      if (source?.streamPreview && !source.saved) videoStreams.discardTemporary(source.id);
+      drafts.setLocation(url);
+    }
+    clearFeedback();
+  }
+
+  async function checkRtsp(name: string, url: string): Promise<boolean> {
+    const parsed = inspectRtspUrl(url);
+    if (parsed.error || mutation.current) return false;
+    clearFeedback();
+    if (source?.streamPreview && !source.saved && drafts.location === url) {
+      videoStreams.startTemporary(source.id, url);
+      return true;
+    }
+    if (source?.streamPreview && !source.saved) videoStreams.discardTemporary(source.id);
+    const address = new URL(url);
+    const next: VisionSource = {
+      id: crypto.randomUUID(), kind: "stream", name: name.trim() || "Camera RTSP",
+      location: `${address.protocol}//${address.host}${address.pathname}`,
+      status: "pending", saved: false, streamPreview: true,
+      format: address.protocol.slice(0, -1).toUpperCase(),
+    };
+    videoStreams.startTemporary(next.id, url);
+    drafts.begin(next, url);
+    drafts.setSaveName(name);
+    return true;
+  }
+
+  async function configureRtsp(name: string, url: string, id?: string): Promise<boolean> {
+    if (mutation.current) return false;
+    mutation.current = true;
+    setSaving(true);
+    clearFeedback();
+    try {
+      const saved = id && !url
+        ? await renameSource(id, name)
+        : await configureRtspSource(name, url, id);
+      savedSources.remember(saved, !id);
+      if (id) {
+        drafts.applySaved(id, saved);
+        if (url) videoStreams.configurationChanged(id);
+      }
+      else {
+        if (source?.streamPreview && !source.saved) videoStreams.discardTemporary(source.id);
+        drafts.begin(saved);
+      }
       setNotice(`Đã lưu “${saved.name}”.`);
       return true;
     } catch (error) {
@@ -336,6 +395,7 @@ export function useSourceSelectionState() {
     setSaveError("");
     try {
       await deleteSource(id);
+      videoStreams.stop(id);
       savedSources.forget(id);
       drafts.applySaved(id, null);
       clearFeedback();
@@ -363,11 +423,14 @@ export function useSourceSelectionState() {
     setMode,
     discardDraft,
     selectFile,
-    selectRemote,
+    selectYoutube,
     openCamera,
     captureScreen,
     save,
     rename,
+    configureRtsp,
+    checkRtsp,
+    updateRtspDraft,
     remove,
     stopCamera,
   };

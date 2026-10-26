@@ -34,3 +34,9 @@ test("a late restore response is discarded after leaving the step or starting a 
   resolve({ id: "old-active-run", status: "running", result: lastFrame });
   assert.equal(await restored, null);
 });
+
+
+test("live AI restores an active run after route changes", async () => {
+  const run = { id: "live", status: "running", result: lastFrame };
+  assert.equal(await restoreRun(async () => run, "stream", new AbortController().signal), run);
+});

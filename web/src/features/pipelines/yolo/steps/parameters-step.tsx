@@ -185,6 +185,20 @@ export function ParametersStep({
             </p>
           </div>
         </div>
+        {source?.kind === "stream" && (
+          <div className="grid gap-6 border-t pt-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="live-fps">Giới hạn AI (FPS)</Label>
+              <Input id="live-fps" type="number" min="1" max="60" value={parameters.liveFps} onChange={(event) => patch({ liveFps: event.target.value })} />
+              <p className="text-xs leading-5 text-muted-foreground">Lấy frame mới nhất, bỏ frame cũ khi AI xử lý chậm.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="live-minutes">Giới hạn chạy (phút)</Label>
+              <Input id="live-minutes" type="number" min="1" max="240" step="1" value={parameters.liveMinutes} onChange={(event) => patch({ liveMinutes: event.target.value })} />
+              <p className="text-xs leading-5 text-muted-foreground">Tiếp tục khi chuyển trang; dừng khi hết hạn hoặc bấm Dừng AI.</p>
+            </div>
+          </div>
+        )}
         {!classify && (
           <ClassFilter
             names={model?.inspection.metadata?.names ?? {}}

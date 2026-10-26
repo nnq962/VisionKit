@@ -21,6 +21,7 @@ export type VisionSource = {
   fps?: number;
   error?: string;
   saved?: boolean;
+  streamPreview?: boolean;
   createdAt?: string;
   updatedAt?: string;
   originalFilename?: string;
@@ -45,7 +46,7 @@ export const sourceKinds: { value: SourceKind; label: string; hint: string }[] =
     {
       value: "stream",
       label: "Camera / stream",
-      hint: "Camera IP qua RTSP, RTMP hoặc HTTP(S)",
+      hint: "Camera IP qua RTSP hoặc RTSPS",
     },
     { value: "youtube", label: "YouTube", hint: "Đường dẫn video YouTube" },
     {

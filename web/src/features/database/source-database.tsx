@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getSource } from "@/features/sources/api";
 import { useSourceSelection } from "@/features/sources/source-provider";
 import type { SourceKind, VisionSource } from "@/features/sources/types";
 import { useSourceCatalog } from "./use-source-catalog";
@@ -36,7 +37,7 @@ export function SourceDatabase() {
 
   function openUpload() {
     selection.setMode("new");
-    if (!["image", "video"].includes(selection.kind))
+    if (!["image", "video", "stream"].includes(selection.kind))
       selection.setKind("image");
     setUploadOpen(true);
     requestAnimationFrame(() =>
@@ -119,6 +120,7 @@ export function SourceDatabase() {
                     <SelectItem value="all">Tất cả loại</SelectItem>
                     <SelectItem value="image">Ảnh</SelectItem>
                     <SelectItem value="video">Video</SelectItem>
+                    <SelectItem value="stream">Camera RTSP</SelectItem>
                     <SelectItem value="screen">Ảnh màn hình</SelectItem>
                   </SelectGroup>
                 </SelectContent>
@@ -186,6 +188,18 @@ export function SourceDatabase() {
               setActionError("");
               setRevision((value) => value + 1);
             } else setActionError("Không đổi được tên. Thử lại.");
+            return ok;
+          },
+          configureRtsp: async (name, url, id) => {
+            const ok = await selection.configureRtsp(name, url, id);
+            if (ok) {
+              if (id) {
+                const refreshed = await getSource(id).catch(() => null);
+                if (refreshed) setDetail(refreshed);
+              }
+              setActionError("");
+              setRevision((value) => value + 1);
+            } else setActionError("Không lưu được cấu hình camera. Kiểm tra kết nối rồi thử lại.");
             return ok;
           },
           remove: async (id) => {

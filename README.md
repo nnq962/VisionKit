@@ -12,9 +12,10 @@ Runtime source metadata is stored in `data/visionkit.sqlite3` by `backend/app/db
 
 ## Local development
 
-Install dependencies once:
+Start Docker Desktop (or Docker Engine + Compose), then install dependencies once:
 
 ```bash
+docker compose pull mediamtx
 (cd backend && uv sync)
 (cd ai && uv sync)
 (cd web && npm install)
@@ -26,7 +27,7 @@ From the project root (Linux/macOS, Python >=3.10):
 ./dev.py
 ```
 
-The launcher starts AI, waits for its health API, then starts backend and checks
+The launcher starts MediaMTX, then AI, waits for its health API, then starts backend and checks
 that its log collector can reach AI. Finally it starts the web development server
 and verifies the frontend API proxy. It sets the internal URLs and CORS origins
 for the selected ports automatically. No model is loaded until requested.
@@ -73,3 +74,61 @@ python3 -m unittest discover -s tests -v
 services. Without it, existing `VISIONKIT_*` storage settings keep working, with
 `data/` in this repository as the default. The web calls backend via `/api/v1`.
 API documentation is at the backend URL printed by the launcher, under `/docs`.
+
+## RTSP preview via MediaMTX / WebRTC
+
+Camera preview uses RTSP/TCP → MediaMTX → WebRTC → browser `<video>`. Python only
+handles source configuration, camera status and WHEP SDP signaling. Preview has
+no frame decoding, JPEG encoding, image transfer or transcoding. The browser hook
+keeps the same peer connection / MediaStream across client-side route changes.
+
+`./dev.py` runs MediaMTX in Docker Compose using the official `bluenviron/mediamtx:1.21.3`
+image, pinned by registry digest in `compose.yaml`. AI/backend/web stay local.
+Preferred relay host ports are Control API 9997, WHEP HTTP 8889, ICE UDP+TCP 8189
+and RTSP 8554; occupied ports are skipped. Each data directory gets its own Compose
+project. Ctrl+C / `./dev.py --stop` stops and removes only that project's relay
+container/network; saved sources, models and database remain under `data/`.
+
+The launcher requires a running Docker daemon. It downloads the pinned image if
+missing. `--no-media` uses an externally managed relay at backend
+`VISIONKIT_MEDIAMTX_API_URL` / `VISIONKIT_MEDIAMTX_WEBRTC_URL`.
+To run MediaMTX independently: `docker compose up -d mediamtx`, then
+`./dev.py --no-media`; stop it with `docker compose down`.
+Do not run both managed and independent modes at once.
+
+Docker publishes the relay ports only on host loopback for local development;
+listeners bind inside the container. Configuration is mounted read-only and there
+are no data volumes for the relay. Camera LAN URLs are unchanged. When started
+by the launcher, camera localhost/127.0.0.1/::1 is translated to
+`host.docker.internal` only in the internal MediaMTX payload; the saved URL stays
+unchanged. An independently managed relay can enable this with backend
+`VISIONKIT_MEDIAMTX_SOURCE_HOST=host.docker.internal`.
+For remote browsers, deployment must configure reachable ICE hosts/listeners and
+TURN if needed; proxying HTTP alone does not forward WebRTC media. The Control API
+must stay internal. H.264 without B-frames is the practical camera configuration;
+unsupported browser codecs produce an actionable error rather than a transcode.
+
+Authentication feedback comes from MediaMTX source state: available/ready means
+media can be read; RTSP 401/403 in `lastError` means camera rejected access. The
+`online` flag alone does not prove readable media or successful authentication.
+Anonymous cameras may also be readable. Saved credentials remain in the local
+source DB and MediaMTX internal config; public session/status responses contain no
+camera URL. The form also supports checking an unsaved RTSP URL and showing video
+without adding it to the library. Its URL configuration lives only in backend RAM
+and MediaMTX until the last viewing lease ends. Saving is a separate explicit action.
+
+See `web/src/features/video-stream/README.md` for the hook and lifecycle contract.
+
+Docker integration checks (isolated containers, no workspace data):
+
+```bash
+VISIONKIT_RUN_DOCKER_TESTS=1 python3 -m unittest discover -s tests -v
+(cd backend && VISIONKIT_RUN_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -v)
+```
+
+Live AI now runs alongside preview: check RTSP → select model → configure → Run.
+AI reads the shared MediaMTX RTSP relay and returns JSON annotations while WebRTC
+video remains independent. The default is at most 5 AI FPS for 60 minutes,
+configurable in the pipeline. Runs continue across routes and can be stopped from
+the Run step after returning with the same configuration. `VISIONKIT_MEDIAMTX_RTSP_URL`
+configures the relay address reachable by AI (launcher sets it automatically).

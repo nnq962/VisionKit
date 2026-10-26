@@ -66,7 +66,7 @@ export function useInferenceRun(
         const next = JSON.parse(event.data) as InferenceRun;
         if (next.id === id && !controller.signal.aborted)
           setRun((current) =>
-            current?.id === next.id && current.updated_at > next.updated_at
+            current?.id === next.id && current.updated_at >= next.updated_at
               ? current
               : next,
           );
@@ -80,7 +80,7 @@ export function useInferenceRun(
         if (!controller.signal.aborted) {
           setError("");
           setRun((current) =>
-            current?.id === next.id && current.updated_at > next.updated_at
+            current?.id === next.id && current.updated_at >= next.updated_at
               ? current
               : next,
           );

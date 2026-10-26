@@ -40,7 +40,7 @@ export function SourceUploadPanel({
             <div className="min-w-0 space-y-6">
               <NewSourceForm
                 selection={selection}
-                allowedKinds={["image", "video"]}
+                allowedKinds={["image", "video", "stream"]}
               />
               <SourceSaveForm selection={selection} />
               {selection.saveError && (
@@ -54,7 +54,7 @@ export function SourceUploadPanel({
                 </p>
               )}
             </div>
-            <SourceDetails source={selection.source} />
+            <SourceDetails source={selection.source} emptyKind={selection.kind} />
           </div>
         ) : (
           <p role="status" className="text-sm text-muted-foreground">

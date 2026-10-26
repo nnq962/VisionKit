@@ -10,9 +10,10 @@ import type { YoloParameters } from "@/features/pipelines/yolo/types";
 import { useInferenceRun } from "../use-inference-run";
 import { VideoRunPreview } from "./video-run-preview";
 import { runPreview } from "../api";
+import { LiveRunPreview } from "./live-run-preview";
 import { RunMetrics } from "./run-metrics";
 
-export function RunWorkspace({
+function RunWorkspaceContent({
   source,
   model,
   parameters,
@@ -25,10 +26,12 @@ export function RunWorkspace({
   const { run } = inference;
   const { preferences, update: updateOverlay } = useOverlayPreferences();
   const supported = Boolean(
-    source && ["image", "screen", "video"].includes(source.kind),
+    source && ["image", "screen", "video", "stream"].includes(source.kind),
   );
   const video = source?.kind === "video";
-  const result = video
+  const live = source?.kind === "stream";
+  const temporal = video || live;
+  const result = temporal
     ? (run?.result ?? null)
     : run?.status === "completed"
       ? run.result
@@ -48,16 +51,16 @@ export function RunWorkspace({
     showSkeleton: preferences.skeleton,
     skeleton: canConnect ? COCO_POSE_SKELETON : [],
   };
-  const src = run ? runPreview(run.id) : source?.previewUrl;
+  const src = live ? undefined : run ? runPreview(run.id) : source?.previewUrl;
   const status = inference.starting
-    ? video
+    ? live ? "Đang khởi tạo AI cho camera…" : video
       ? "Đang gửi video…"
       : "Đang gửi ảnh…"
     : run
       ? (
           {
             queued: "Đang chờ AI",
-            running: video
+            running: live ? (result ? "AI đang xử lý camera…" : "Đang nạp model…") : video
               ? result
                 ? "Đang xử lý video…"
                 : "Đang nạp model…"
@@ -94,7 +97,7 @@ export function RunWorkspace({
               onClick={() => void inference.stop()}
             >
               <SquareIcon />
-              Dừng
+              {live ? "Dừng AI" : "Dừng"}
             </Button>
           ) : (
             <Button
@@ -108,15 +111,14 @@ export function RunWorkspace({
           {result && (
             <Button variant="outline" onClick={download}>
               <DownloadIcon />
-              {video ? "JSON frame cuối" : "JSON"}
+              {temporal ? "JSON frame cuối" : "JSON"}
             </Button>
           )}
         </div>
       </div>
       {!supported && (
         <p className="text-sm text-muted-foreground">
-          Hiện hỗ trợ ảnh và video file. Camera/RTSP sẽ được nối ở bước tiếp
-          theo.
+          Nguồn này chưa hỗ trợ chạy AI. Chọn ảnh, video file hoặc camera RTSP.
         </p>
       )}
       {(inference.error || run?.error) && (
@@ -125,14 +127,15 @@ export function RunWorkspace({
         </p>
       )}
       {supported && (
-        <RunMetrics result={result} progress={run?.progress} video={video} />
+        <RunMetrics result={result} progress={run?.progress} video={temporal} />
       )}
+      {live && <p className="text-xs text-muted-foreground">AI lấy tối đa {parameters.liveFps} FPS · tối đa {parameters.liveMinutes} phút · tiếp tục chạy khi chuyển trang.</p>}
       {video && run?.progress && (
         <div className="space-y-2">
           <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground tabular-nums">
             <span>
               {run.progress.frames_processed} frame đã xử lý · Video gốc{" "}
-              {run.progress.source_fps.toFixed(1)} FPS
+              {(run.progress.source_fps ?? 0).toFixed(1)} FPS
             </span>
             <span>
               {run.progress.percent === null
@@ -159,7 +162,9 @@ export function RunWorkspace({
       )}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-3">
-          {src && supported && video ? (
+          {live && source ? (
+            <LiveRunPreview sourceId={source.id} name={source.name} result={inference.active ? result : null} options={overlayOptions} />
+          ) : src && supported && video ? (
             <VideoRunPreview
               key={run?.id ?? src}
               src={src}
@@ -200,7 +205,7 @@ export function RunWorkspace({
             canConnect={canConnect}
             classify={model?.task === "classify"}
           />
-          {result && video && (
+          {result && temporal && (
             <div className="space-y-2 border-t pt-4 text-xs text-muted-foreground">
               <p>
                 Frame {result.frameId ?? 0} ·{" "}
@@ -212,4 +217,11 @@ export function RunWorkspace({
       </div>
     </div>
   );
+}
+
+
+/** A new selection owns a new observer; prior server runs continue independently. */
+export function RunWorkspace(props: Parameters<typeof RunWorkspaceContent>[0]) {
+  const key = `${props.source?.id}:${props.model?.id}:${JSON.stringify(props.parameters)}`;
+  return <RunWorkspaceContent key={key} {...props} />;
 }

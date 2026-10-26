@@ -13,6 +13,10 @@ class Settings:
     Thuộc tính:
         database_path: File SQLite, không thay đổi đường dẫn dữ liệu đã có.
         sources_path: Thư mục quản lý file nguồn được upload.
+        mediamtx_api_url: Control API MediaMTX nội bộ để cấu hình/check nguồn.
+        mediamtx_webrtc_url: HTTP WHEP nội bộ, chỉ proxy SDP signaling.
+        mediamtx_rtsp_url: URL RTSP relay mà AI có thể truy cập.
+        mediamtx_source_host: Host thay thế loopback của camera khi relay ở Docker.
         ai_url: URL API nội bộ AI; None tắt tự động inspect trong unit test.
         runs_path: Thư mục snapshot tạm cho inference, mặc định data/runs.
         models_path: Thư mục model; mặc định cạnh thư mục sources.
@@ -30,6 +34,10 @@ class Settings:
     models_path: Path | None = None
     ai_url: str | None = None
     runs_path: Path | None = None
+    mediamtx_api_url: str = "http://127.0.0.1:9997"
+    mediamtx_webrtc_url: str = "http://127.0.0.1:8889"
+    mediamtx_source_host: str | None = None
+    mediamtx_rtsp_url: str = "rtsp://127.0.0.1:8554"
     max_model_upload_bytes: int = 200 * 1024 * 1024
     max_model_bytes: int = 1024 * 1024 * 1024
     model_download_concurrency: int = 2
@@ -59,6 +67,16 @@ def load_settings() -> Settings:
         runs_path=Path(os.getenv("VISIONKIT_RUNS_PATH", str(root / "runs")))
         .expanduser()
         .resolve(),
+        mediamtx_api_url=os.getenv(
+            "VISIONKIT_MEDIAMTX_API_URL", "http://127.0.0.1:9997"
+        ).rstrip("/"),
+        mediamtx_webrtc_url=os.getenv(
+            "VISIONKIT_MEDIAMTX_WEBRTC_URL", "http://127.0.0.1:8889"
+        ).rstrip("/"),
+        mediamtx_rtsp_url=os.getenv(
+            "VISIONKIT_MEDIAMTX_RTSP_URL", "rtsp://127.0.0.1:8554"
+        ).rstrip("/"),
+        mediamtx_source_host=os.getenv("VISIONKIT_MEDIAMTX_SOURCE_HOST") or None,
         ai_url=os.getenv("VISIONKIT_AI_URL", "http://127.0.0.1:8001").rstrip("/"),
         models_path=Path(os.getenv("VISIONKIT_MODELS_PATH", str(root / "models")))
         .expanduser()

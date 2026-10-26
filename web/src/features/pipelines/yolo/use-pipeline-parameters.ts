@@ -45,6 +45,8 @@ export function usePipelineParameters(model: StoredModel | null) {
         "device",
         "maxDet",
         "vidStride",
+        "liveFps",
+        "liveMinutes",
       ] as const) {
         if (typeof saved[name] === "string") value[name] = saved[name];
       }

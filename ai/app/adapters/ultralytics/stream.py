@@ -16,7 +16,7 @@ def predict_stream(
 ) -> None:
     """Nạp model một lần, đọc latest-frame và gửi NDJSON metadata/kết quả theo thời hạn.
 
-    Không pacing live stream; frame cũ bị thay trong slot hữu hạn. vid_stride theo
+    Giới hạn nhịp AI theo max_fps; frame cũ bị thay trong slot hữu hạn. vid_stride theo
     index nguồn. Hết hạn trả completed; EOF/mất camera là lỗi, không completed.
     """
     model, device = load_model(model_path, request)
@@ -35,13 +35,20 @@ def predict_stream(
         latest = None
         progress = None
         next_index = 0
+        next_due = started
         while time.perf_counter() - started < request.duration_seconds:
+            wait = next_due - time.perf_counter()
+            if wait > 0:
+                time.sleep(wait)
+            if time.perf_counter() - started >= request.duration_seconds:
+                break
             frames, metas = next(sources)
             meta = metas[0]
             if meta.frame_index < next_index:
                 continue
             next_index = meta.frame_index + request.options.vid_stride
             options = request.options
+            next_due = time.perf_counter() + 1 / options.max_fps
             result = model.predict(
                 source=frames[0],
                 conf=options.conf,

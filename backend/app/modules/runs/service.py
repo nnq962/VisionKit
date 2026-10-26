@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import BinaryIO
 from uuid import uuid4
 
+import anyio
 import httpx
 from starlette.concurrency import run_in_threadpool
 
@@ -21,6 +22,7 @@ from app.modules.models.repository import timestamp
 from app.modules.models.schemas import StoredModel
 from app.modules.models.service import ModelService
 from app.modules.sources.models import Source, SourceKind
+from app.modules.streams.service import PreviewService
 from app.storage.local import LocalStorage
 
 from .repository import RunRepository
@@ -34,9 +36,16 @@ class RunService:
     """Giữ tối đa bốn lượt active và một request inference đồng thời; bảo vệ model đang dùng."""
 
     def __init__(
-        self, repository: RunRepository, models: ModelService, settings: Settings
+        self,
+        repository: RunRepository,
+        models: ModelService,
+        settings: Settings,
+        previews: PreviewService | None = None,
     ) -> None:
         """Tạo storage/client riêng và đánh dấu job gián đoạn; không import module AI."""
+        self.previews = previews
+        self.relay_leases: dict[str, str] = {}
+        self.release_tasks: set[asyncio.Task] = set()
         self.repository = repository
         self.models = models
         self.settings = settings
@@ -91,6 +100,42 @@ class RunService:
         except Exception:
             for path in self.storage.source_paths(location, metadata):
                 path.unlink(missing_ok=True)
+            raise
+
+    async def create_live(
+        self,
+        model_id: str,
+        options: RunOptions,
+        source_id: str | None,
+        preview_id: str | None,
+        duration_seconds: int,
+    ) -> RunRecord:
+        """Chạy AI đọc MediaMTX, giữ path đến khi terminal; không lưu URL camera trong run."""
+        if self.previews is None:
+            raise SourceError(503, "Relay chưa được cấu hình.")
+        token, relay = await self.previews.acquire_inference(source_id, preview_id)
+        try:
+            record = await self._enqueue(
+                model_id,
+                options,
+                "",
+                {
+                    "source_id": source_id,
+                    "preview_id": preview_id,
+                    "is_live": True,
+                    "preview_available": False,
+                    "via_mediamtx": True,
+                    "duration_seconds": duration_seconds,
+                },
+                "stream",
+                stream_url=relay,
+                duration_seconds=duration_seconds,
+            )
+            self.relay_leases[record.id] = token
+            return record
+        except BaseException:
+            with anyio.CancelScope(shield=True):
+                await self.previews.close(token)
             raise
 
     async def create_stream(
@@ -364,6 +409,11 @@ class RunService:
 
     def _release(self, run_id: str) -> None:
         """Giải phóng lease đúng một lần, kể cả huỷ task trước khi coroutine bắt đầu."""
+        relay = self.relay_leases.pop(run_id, None)
+        if relay and self.previews:
+            task = asyncio.create_task(self.previews.close(relay))
+            self.release_tasks.add(task)
+            task.add_done_callback(self.release_tasks.discard)
         model_id = self.pinned.pop(run_id, None)
         if model_id:
             remaining = self.models.in_use.get(model_id, 1) - 1
@@ -389,6 +439,8 @@ class RunService:
         if task:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        if self.release_tasks:
+            await asyncio.gather(*tuple(self.release_tasks), return_exceptions=True)
         return self.get(record.id)
 
     def content(self, run_id: str) -> Path:
@@ -434,4 +486,6 @@ class RunService:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        if self.release_tasks:
+            await asyncio.gather(*tuple(self.release_tasks), return_exceptions=True)
         await self.client.aclose()

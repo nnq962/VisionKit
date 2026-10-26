@@ -55,7 +55,7 @@ HEIC/HEIF files use the backend's transient `/api/v1/sources/inspect` endpoint f
 
 `SourceProvider` lives in the shared workspace layout so changing routes does not destroy the current source picker state. `use-source-drafts.ts` keeps independent drafts for each source type, including the original File, HEIC preview Blob, URL text, display name and save preference. Selecting an existing library source does not replace a new-source draft.
 
-Draft files and metadata are saved locally in IndexedDB (`visionkit-source-drafts`), not automatically uploaded to the saved library. Blob preview URLs are reconstructed after reload. A draft remains local to this browser/origin and can be explicitly discarded; saving to the backend removes it from the unsaved draft cache. Browser storage is best-effort: if unavailable/full, the UI reports that drafts are only retained during in-app navigation and warns before leaving/reloading. Files interrupted during metadata reading are retained with a retry action. Camera streams are never persisted, and are stopped when switching away or leaving the pipeline route.
+Draft files and metadata are saved locally in IndexedDB (`visionkit-source-drafts`), not automatically uploaded to the saved library. Blob preview URLs are reconstructed after reload. A draft remains local to this browser/origin and can be explicitly discarded; saving to the backend removes it from the unsaved draft cache. Browser storage is best-effort: if unavailable/full, the UI reports that drafts are only retained during in-app navigation and warns before leaving/reloading. Files interrupted during metadata reading are retained with a retry action. Browser webcam/screen MediaStreams are never persisted; webcam capture stops when leaving the pipeline route. RTSP WebRTC connections are owned by the root provider and remain connected across routes until explicitly stopped.
 
 ## Model Hub
 
@@ -85,7 +85,7 @@ The Parameters step composes inference controls, a searchable metadata-driven cl
 
 ## Real image inference
 
-The Run step now starts real image/screenshot/video-file inference through `features/inference/`. It uploads unsaved original files or references saved sources, requests the selected stored/temporary model and numeric parameters, then subscribes to run WebSocket events with a GET polling fallback. Results feed the reusable canvas overlay, a detection/classification list and JSON download. The user can stop/retry and toggle annotation visibility. The latest run ID for the same source/model/options is remembered in sessionStorage for tab-local reload/navigation recovery; snapshots expire after 24 hours. A changed configuration requires a new run. Webcam/RTSP sources remain visibly disabled until their inference adapters are implemented.
+The Run step now starts real image/screenshot/video-file inference through `features/inference/`. It uploads unsaved original files or references saved sources, requests the selected stored/temporary model and numeric parameters, then subscribes to run WebSocket events with a GET polling fallback. Results feed the reusable canvas overlay, a detection/classification list and JSON download. The user can stop/retry and toggle annotation visibility. The latest run ID for the same source/model/options is remembered in sessionStorage for tab-local reload/navigation recovery; snapshots expire after 24 hours. A changed configuration requires a new run. RTSP inference uses the live relay flow below; webcam inference remains disabled.
 
 Run both backend 8000 and AI 8001; install AI dependencies with `cd ai && uv sync`. Actual device availability is validated in AI. ONNX runs on CPU in this MVP. Segmentation/OBB polygons are in downloaded JSON while preview shows bbox; pose keypoints display without guessing a custom skeleton. No inference output is mocked in product routes.
 
@@ -132,3 +132,50 @@ stops 12 px from the viewport edge. Controls adapt to the panel width. Position
 and custom size survive closing and workspace navigation; the expand button
 restores the previous custom size when toggled back. The bottom-right handle also
 supports arrow keys, with Shift for larger steps. Size/position reset on reload.
+
+## Persistent RTSP preview hook
+
+`features/video-stream` exports `useVideoStream(sourceId)` and `VideoStreamPreview`.
+The root `VideoStreamProvider` shares one RTCPeerConnection and MediaStream per
+camera/temporary preview ID. It retains the peer across route and step changes,
+checks connection state and API heartbeat, and releases it on explicit stop or
+provider teardown. Preview uses WHEP signaling and native `<video>` playback;
+MediaMTX sends the media directly to the browser. Python does not transport frames.
+See `src/features/video-stream/README.md` for usage, lifetime, limits and tests
+(`npm run test:streams`).
+
+## RTSP camera configuration
+
+The Source picker and Database share a camera form with a name, masked/revealable
+RTSP/RTSPS URL, validation and a credential-free host/port summary. “Kiểm tra và
+xem trực tiếp” checks an unsaved URL and starts WebRTC after MediaMTX confirms
+readable media. Name is optional for this flow; it creates no library source.
+“Lưu vào thư viện” is a separate optional action requiring a name. Saved cameras expose “Sửa cấu hình”;
+a replacement URL starts empty, and leaving it empty renames the camera without
+changing its connection details. Saving a replacement URL restarts the shared
+preview reader while retaining its viewers. Existing inference runs are unaffected.
+Database supports adding/filtering RTSP cameras and editing/deleting their
+configuration. Preview shows connecting/playing/reconnecting/stopped/error states
+and manual stop/reconnect controls; stopping survives route changes.
+
+Camera access feedback comes from MediaMTX ready/source-error APIs; account
+detection in the configuration form is only a URL summary. RTSP form handling is
+separate from YouTube URL selection and file upload. Camera create/update APIs
+receive the original URL from the form; redacted display locations are never used
+to save credentials. See the root README for Docker relay setup, codec constraints
+and local ICE networking.
+
+## Live RTSP inference
+
+After checking an unsaved camera or selecting a saved camera, select a model and
+continue to Run. `POST /api/v1/runs/live` receives a source ID or temporary preview
+ID, never the camera URL. Video keeps playing from the shared WebRTC peer while
+JSON results draw boxes/keypoints on a separate canvas. Expire stale annotations
+after two seconds. Video and AI are asynchronous, so boxes can lag slightly.
+
+AI defaults to a maximum of 5 FPS and 60 minutes; both are adjustable in Parameters
+(1–60 FPS, 1–240 minutes). Navigation unmounts only the observer; the server run
+continues. Returning to Run with the same source/model/options restores its ID
+from sessionStorage and resumes results/Stop. Dừng AI cancels inference while
+WebRTC video keeps playing. Closing the tab does not cancel AI: it stops at the
+duration limit or explicit API cancellation. Backend restart interrupts active runs.

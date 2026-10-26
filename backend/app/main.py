@@ -23,6 +23,7 @@ from app.modules.runs.repository import RunRepository
 from app.modules.runs.service import RunService
 from app.modules.sources.repository import SourceRepository
 from app.modules.sources.service import SourceService
+from app.modules.streams.service import PreviewService
 from app.storage.local import LocalStorage
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             application.state.sources = SourceService(
                 SourceRepository(database), LocalStorage(config)
             )
+            application.state.streams = PreviewService(
+                application.state.sources, config
+            )
+            cleanup.push_async_callback(application.state.streams.shutdown)
+            streams_task = asyncio.create_task(application.state.streams.maintain())
+            cleanup.push_async_callback(cancel_background_task, streams_task)
             application.state.models = ModelService(ModelRepository(database), config)
             cleanup.push_async_callback(application.state.models.shutdown)
             await application.state.models.cleanup_temporary()
@@ -62,7 +69,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 application.state.models.maintain_temporary()
             )
             application.state.runs = RunService(
-                RunRepository(database), application.state.models, config
+                RunRepository(database),
+                application.state.models,
+                config,
+                application.state.streams,
             )
             cleanup.push_async_callback(application.state.runs.shutdown)
             application.state.runs.cleanup_task = asyncio.create_task(
@@ -78,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Content-Type"],
     )
+    application.state.settings = config
     application.include_router(router)
     application.add_exception_handler(SourceError, source_error_handler)
     application.add_exception_handler(sqlite3.Error, storage_error_handler)

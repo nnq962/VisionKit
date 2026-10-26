@@ -149,7 +149,7 @@ export function useSourceDrafts() {
     }));
   }
 
-  function begin(source: VisionSource) {
+  function begin(source: VisionSource, location = source.location) {
     commit((state) => ({
       ...state,
       mode: "new",
@@ -161,8 +161,8 @@ export function useSourceDrafts() {
           name: source.name,
           save: false,
           location:
-            source.kind === "stream" || source.kind === "youtube"
-              ? source.location
+            !source.saved && (source.kind === "stream" || source.kind === "youtube")
+              ? location
               : "",
         },
       },

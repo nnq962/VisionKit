@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { VideoStreamProvider } from "@/features/video-stream";
 import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -26,7 +27,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${manrope.variable} ${geistMono.variable} h-full font-sans antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <TooltipProvider>{children}</TooltipProvider>
+        <VideoStreamProvider><TooltipProvider>{children}</TooltipProvider></VideoStreamProvider>
       </body>
     </html>
   );

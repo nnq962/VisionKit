@@ -1,0 +1,29 @@
+# Local preview relay. No decoding/transcoding, credentials are registered via API.
+logLevel: error
+logDestinations: [file]
+logFile: /dev/null
+# Ports are published on host loopback only. API requests arrive via Docker NAT.
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: api
+      - action: read
+api: true
+apiAddress: :9997
+rtsp: true
+rtspAddress: :8554
+rtspTransports: [tcp]
+rtmp: false
+hls: false
+srt: false
+moq: false
+webrtc: true
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcIPsFromInterfaces: false
+webrtcAdditionalHosts: [127.0.0.1]
+webrtcICEServers2: []
+paths: {}

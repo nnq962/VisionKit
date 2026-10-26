@@ -3,6 +3,7 @@
 
 import argparse
 import fcntl
+import hashlib
 import json
 import logging
 import os
@@ -95,7 +96,7 @@ def stop_session(data: Path) -> int:
                 "PID trong session.lock không thuộc launcher này; không gửi tín hiệu."
             )
         os.kill(pid, signal.SIGTERM)
-        deadline = time.monotonic() + 15
+        deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -105,15 +106,17 @@ def stop_session(data: Path) -> int:
                 print("Đã dừng phiên VisionKit và các dịch vụ con.")
                 return 0
         raise RuntimeError(
-            "Launcher chưa dừng sau 15 giây; kiểm tra log trước khi thử lại."
+            "Launcher chưa dừng sau 30 giây; kiểm tra log trước khi thử lại."
         )
 
 
-def healthy(url: str, *, ai: bool = False) -> bool:
+def healthy(url: str, *, ai: bool = False, media: bool = False) -> bool:
     """Xác nhận phản hồi API thay vì chỉ kiểm tra socket đã mở."""
     try:
         with urllib.request.urlopen(url, timeout=2) as response:
             body = json.load(response)
+        if media:
+            return isinstance(body.get("version"), str)
         return (
             body.get("ai", {}).get("available") is True
             if ai
@@ -133,9 +136,13 @@ class Service:
         cwd: Path,
         env: dict[str, str],
         log_dir: Path,
+        cleanup_command: list[str] | None = None,
     ) -> None:
         """Mở log xoay vòng và process group riêng; không nhận quyền quản lý process cũ."""
         self.name = name
+        self.cleanup_command = cleanup_command
+        self.env = env
+        self.cwd = cwd
         self.path = log_dir / f"{name}.log"
         self.handler = RotatingFileHandler(
             self.path, maxBytes=5 * 1024 * 1024, backupCount=2, encoding="utf-8"
@@ -217,6 +224,26 @@ def shutdown(services: list[Service]) -> None:
         child.process.wait()
         child.thread.join(timeout=3)
         child.handler.close()
+        if child.cleanup_command:
+            try:
+                result = subprocess.run(
+                    child.cleanup_command,
+                    cwd=child.cwd,
+                    env=child.env,
+                    capture_output=True,
+                    text=True,
+                    timeout=12,
+                    check=False,
+                )
+                if result.returncode:
+                    print(
+                        f"Không dọn được container {child.name}: {result.stderr.strip()}",
+                        file=sys.stderr,
+                    )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                print(
+                    f"Không dọn được container {child.name}: {error}", file=sys.stderr
+                )
 
 
 def wait_ready(
@@ -226,6 +253,7 @@ def wait_ready(
     stopping: threading.Event,
     *,
     ai: bool = False,
+    media: bool = False,
 ) -> None:
     """Đợi readiness có timeout; kiểm tra mọi process để báo lỗi startup sớm."""
     deadline = time.monotonic() + 90
@@ -234,7 +262,7 @@ def wait_ready(
             raise KeyboardInterrupt
         for child in services:
             child.check()
-        if healthy(url, ai=ai):
+        if healthy(url, ai=ai, media=media):
             print(f"[ok] {name}", flush=True)
             return
         stopping.wait(0.25)
@@ -244,7 +272,7 @@ def wait_ready(
 
 
 def main() -> int:
-    """Chạy cả ba dịch vụ, trả mã lỗi nếu một dịch vụ dừng; Ctrl+C dọn tài nguyên."""
+    """Chạy MediaMTX Docker và các dịch vụ local; Ctrl+C dọn process/container sở hữu."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--stop",
@@ -263,6 +291,11 @@ def main() -> int:
         "--no-web",
         action="store_true",
         help="Chỉ chạy backend và AI (cho kiểm thử/API).",
+    )
+    parser.add_argument(
+        "--no-media",
+        action="store_true",
+        help="Dùng MediaMTX ngoài launcher (hoặc không dùng preview).",
     )
     args = parser.parse_args()
     for port in (args.backend_port, args.ai_port, args.web_port):
@@ -295,6 +328,30 @@ def main() -> int:
             not shutil.which("npm") or not (ROOT / "web/node_modules/next").is_dir()
         ):
             raise RuntimeError("Thiếu npm/dependency web. Chạy: cd web && npm install")
+        if not args.no_media:
+            if not shutil.which("docker"):
+                raise RuntimeError(
+                    "Thiếu Docker. Cài và bật Docker Desktop trước khi chạy."
+                )
+            available = subprocess.run(
+                ["docker", "info", "--format", "{{.ServerVersion}}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if available.returncode:
+                raise RuntimeError(
+                    "Docker chưa chạy. Bật Docker Desktop rồi chạy lại ./dev.py."
+                )
+            compose = subprocess.run(
+                ["docker", "compose", "version"],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+            if compose.returncode:
+                raise RuntimeError("Thiếu Docker Compose plugin.")
         if not args.no_web and web_is_running():
             raise RuntimeError(
                 "Next.js development đã chạy trong project. Dừng phiên dev cũ trước khi bật một phiên mới."
@@ -313,6 +370,34 @@ def main() -> int:
         for name, preferred in (("ai", 8001), ("backend", 8000), ("web", 3001)):
             if name not in chosen and (name != "web" or not args.no_web):
                 chosen[name] = choose_port(preferred, None, reserved)
+        if not args.no_media:
+            for name, port in (
+                ("media_api", 9997),
+                ("media_rtsp", 8554),
+                ("media_http", 8889),
+            ):
+                chosen[name] = choose_port(port, None, reserved)
+            # ICE sử dụng cùng số cổng cho TCP/UDP; không chiếm dịch vụ đang có.
+            for port in range(8189, 8289):
+                if port in reserved:
+                    continue
+                probes = [
+                    socket.socket(socket.AF_INET, kind)
+                    for kind in (socket.SOCK_STREAM, socket.SOCK_DGRAM)
+                ]
+                try:
+                    for probe in probes:
+                        probe.bind(("127.0.0.1", port))
+                    chosen["media_ice"] = port
+                    reserved.add(port)
+                    break
+                except OSError:
+                    pass
+                finally:
+                    for probe in probes:
+                        probe.close()
+            else:
+                raise RuntimeError("Không tìm được cổng ICE TCP/UDP cho MediaMTX.")
         env = dict(os.environ)
         env["VISIONKIT_AI_URL"] = f"http://127.0.0.1:{chosen['ai']}"
         env["VISIONKIT_API_URL"] = f"http://127.0.0.1:{chosen['backend']}"
@@ -346,6 +431,76 @@ def main() -> int:
         session_lock.truncate()
         session_lock.write(f"{os.getpid()}\n")
         session_lock.flush()
+        if not args.no_media:
+            env["VISIONKIT_MEDIAMTX_SOURCE_HOST"] = "host.docker.internal"
+            env["VISIONKIT_MEDIAMTX_RTSP_URL"] = (
+                f"rtsp://127.0.0.1:{chosen['media_rtsp']}"
+            )
+            env["VISIONKIT_MEDIAMTX_API_URL"] = (
+                f"http://127.0.0.1:{chosen['media_api']}"
+            )
+            env["VISIONKIT_MEDIAMTX_WEBRTC_URL"] = (
+                f"http://127.0.0.1:{chosen['media_http']}"
+            )
+            for key, name in (
+                ("API", "media_api"),
+                ("HTTP", "media_http"),
+                ("RTSP", "media_rtsp"),
+                ("ICE", "media_ice"),
+            ):
+                env[f"VISIONKIT_MEDIA_{key}_PORT"] = str(chosen[name])
+            project = "visionkit-" + hashlib.sha256(str(data).encode()).hexdigest()[:10]
+            command = [
+                "docker",
+                "compose",
+                "--project-name",
+                project,
+                "--file",
+                str(ROOT / "compose.yaml"),
+            ]
+            existing = subprocess.run(
+                command + ["ps", "--status", "running", "--quiet"],
+                env=env,
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if existing.returncode:
+                raise RuntimeError(
+                    "Không đọc được trạng thái Docker Compose của project."
+                )
+            if existing.stdout.strip():
+                raise RuntimeError(
+                    f"Container MediaMTX của {project} đang chạy ngoài launcher. Dừng phiên đó trước khi chạy lại."
+                )
+            services.append(
+                Service(
+                    "mediamtx",
+                    command
+                    + [
+                        "up",
+                        "--no-color",
+                        "--pull",
+                        "missing",
+                        "--abort-on-container-exit",
+                        "--exit-code-from",
+                        "mediamtx",
+                    ],
+                    ROOT,
+                    env,
+                    log_dir,
+                    cleanup_command=command + ["down", "--timeout", "3"],
+                )
+            )
+            wait_ready(
+                services,
+                f"{env['VISIONKIT_MEDIAMTX_API_URL']}/v3/info",
+                "MediaMTX Docker sẵn sàng",
+                stopping,
+                media=True,
+            )
         for name, module in (("ai", "ai"), ("backend", "backend")):
             services.append(
                 Service(
@@ -416,7 +571,7 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\nĐang dừng các dịch vụ…", flush=True)
         return 0
-    except (OSError, ValueError, RuntimeError) as error:
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         print(f"Lỗi: {error}", file=sys.stderr, flush=True)
         return 1
     finally:

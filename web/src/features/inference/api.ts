@@ -12,13 +12,15 @@ export type InferenceResult = DetectionFrame & {
 export type InferenceRun = {
   id: string;
   model_id: string;
-  source_kind?: "image" | "screen" | "video";
+  source_kind?: "image" | "screen" | "video" | "stream";
   progress?: {
     frames_processed: number;
     frame_index: number;
     total_frames: number | null;
     timestamp_ms: number;
-    source_fps: number;
+    source_fps: number | null;
+    is_live?: boolean;
+    elapsed_seconds?: number;
     processing_fps: number;
     percent: number | null;
   } | null;
@@ -49,9 +51,27 @@ export async function startRun(
   parameters: YoloParameters,
   signal: AbortSignal,
 ) {
-  if (!["image", "screen", "video"].includes(source.kind))
-    throw new Error("Hiện hỗ trợ ảnh, ảnh màn hình và video file.");
+  if (!["image", "screen", "video", "stream"].includes(source.kind))
+    throw new Error("Hiện hỗ trợ ảnh, ảnh màn hình, video file và RTSP.");
   const dimensions = parameters.imageSize.split("x").map(Number);
+  if (source.kind === "stream") {
+    if (!source.saved && !source.streamPreview) throw new Error("Kiểm tra RTSP trước khi chạy AI.");
+    return request("/live", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal,
+      body: JSON.stringify({
+        model_id: modelId,
+        ...(source.saved ? { source_id: source.id } : { preview_id: source.id }),
+        duration_seconds: Number(parameters.liveMinutes) * 60,
+        options: {
+          conf: Number(parameters.confidence), iou: Number(parameters.iou),
+          imgsz: [dimensions[0], dimensions[1] ?? dimensions[0]], device: parameters.device,
+          classes: parameters.classMode === "all" ? null : parameters.classes.map(Number),
+          max_det: Number(parameters.maxDet), agnostic_nms: parameters.agnosticNms,
+          vid_stride: Number(parameters.vidStride), max_fps: Number(parameters.liveFps),
+        },
+      }),
+    });
+  }
   const body = new FormData();
   body.set("model_id", modelId);
   body.set("kind", source.kind);

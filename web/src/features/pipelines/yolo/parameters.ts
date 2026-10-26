@@ -100,6 +100,12 @@ export function validateParameters(
       Number(parameters.vidStride) > 120)
   )
     return "Bước lấy frame phải là số nguyên từ 1 đến 120.";
+  if (source?.kind === "stream") {
+    if (!parameters.liveFps.trim() || !Number.isFinite(Number(parameters.liveFps)) || Number(parameters.liveFps) < 1 || Number(parameters.liveFps) > 60)
+      return "Giới hạn AI phải từ 1 đến 60 FPS.";
+    if (!parameters.liveMinutes.trim() || !Number.isInteger(Number(parameters.liveMinutes)) || Number(parameters.liveMinutes) < 1 || Number(parameters.liveMinutes) > 240)
+      return "Thời lượng phải là số phút từ 1 đến 240.";
+  }
   const names = model?.inspection.metadata?.names ?? {};
   if (
     !classify &&

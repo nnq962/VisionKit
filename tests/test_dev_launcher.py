@@ -1,5 +1,6 @@
 """Kiểm tra launcher bằng ba process thật và API/frontend fixture, không chạy AI."""
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -132,9 +133,11 @@ class LauncherLifecycleTests(unittest.TestCase):
             self.process.terminate()
             self.process.wait(timeout=15)
 
-    def start(self) -> None:
+    def start(self, *, media: bool = False) -> None:
         """Khởi chạy launcher fixture và đợi thông báo readiness có giới hạn."""
         command = [sys.executable, str(self.root / "dev.py")]
+        if not media:
+            command.append("--no-media")
         for name, port in self.ports.items():
             command.extend([f"--{name}-port", str(port)])
         with self.output.open("w") as output:
@@ -154,6 +157,48 @@ class LauncherLifecycleTests(unittest.TestCase):
             with socket.socket() as probe:
                 probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 probe.bind(("127.0.0.1", port))
+
+    @unittest.skipUnless(
+        os.getenv("VISIONKIT_RUN_DOCKER_TESTS") == "1" and shutil.which("docker"),
+        "Cần bật integration Docker",
+    )
+    def test_media_relay_startup_and_cleanup(self) -> None:
+        """Launcher mở relay thật trước backend và thu hồi process khi kết thúc."""
+        (self.root / "media").mkdir()
+        shutil.copyfile(ROOT / "media/mediamtx.yml", self.root / "media/mediamtx.yml")
+        shutil.copyfile(ROOT / "compose.yaml", self.root / "compose.yaml")
+        self.start(media=True)
+        self.assertIsNone(self.process.poll(), self.output.read_text())
+        self.assertIn("MediaMTX Docker sẵn sàng", self.output.read_text())
+        line = next(
+            line
+            for line in self.output.read_text().splitlines()
+            if line.startswith("[mediamtx] PID")
+        )
+        media_pid = int(line.split()[2])
+        self.process.send_signal(signal.SIGINT)
+        self.assertEqual(self.process.wait(timeout=15), 0)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(media_pid, 0)
+        self.assert_ports_released()
+        project = (
+            "visionkit-"
+            + hashlib.sha256(str(self.root / "data").encode()).hexdigest()[:10]
+        )
+        result = subprocess.run(
+            [
+                "docker",
+                "ps",
+                "--all",
+                "--quiet",
+                "--filter",
+                f"label=com.docker.compose.project={project}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(result.stdout.strip(), "", "Container fixture chưa được dọn")
 
     def test_proxy_readiness_and_sigint_cleanup(self) -> None:
         """Web dùng đúng backend, backend dùng đúng AI; Ctrl+C thu hồi cả ba group."""
