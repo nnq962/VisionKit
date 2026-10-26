@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -14,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings
 from app.core.errors import SourceError
+from app.core.logs import run_context
 from app.modules.models.repository import timestamp
 from app.modules.models.schemas import StoredModel
 from app.modules.models.service import ModelService
@@ -21,6 +23,8 @@ from app.storage.local import LocalStorage
 
 from .repository import RunRepository
 from .schemas import RunOptions, RunRecord
+
+logger = logging.getLogger(__name__)
 
 
 # ------------------------------- Service lượt chạy ---------------------------
@@ -128,6 +132,7 @@ class RunService:
                     self._run(record, model), name=run_id
                 )
                 self.tasks[run_id].add_done_callback(self._finished)
+                logger.info("Đã tạo lượt chạy %s.", kind, extra={"run_id": run_id})
                 return record
         except Exception:
             for path in self.storage.source_paths(location, metadata):
@@ -136,14 +141,17 @@ class RunService:
 
     async def _run(self, record: RunRecord, model: StoredModel) -> None:
         """Gọi AI, xác minh JSON cơ bản và lưu kết quả; huỷ request khi người dùng dừng."""
+        token = run_context.set(record.id)
         try:
             async with self.semaphore:
+                logger.info("Bắt đầu xử lý %s.", record.source_kind)
                 self.repository.save(record.model_copy(update={"status": "running"}))
                 if record.source_kind == "video":
                     await self._video(record, model)
                     return
                 response = await self.client.post(
                     f"{self.settings.ai_url}/api/v1/inference/image",
+                    headers={"X-VisionKit-Run-ID": record.id},
                     json={
                         "model_location": model.location,
                         "model_sha256": model.sha256,
@@ -173,10 +181,13 @@ class RunService:
                 self.repository.save(
                     record.model_copy(update={"status": "completed", "result": result})
                 )
+                logger.info("Hoàn tất inference ảnh.")
         except asyncio.CancelledError:
+            logger.info("Đã huỷ lượt chạy.")
             current = self.latest.get(record.id) or record
             self.repository.save(current.model_copy(update={"status": "cancelled"}))
         except Exception as error:
+            logger.exception("Lượt chạy thất bại.")
             message = (
                 error.message
                 if isinstance(error, SourceError)
@@ -190,6 +201,7 @@ class RunService:
         finally:
             self.latest.pop(record.id, None)
             self._release(record.id)
+            run_context.reset(token)
 
     async def _video(self, record: RunRecord, model: StoredModel) -> None:
         """Đọc event video tuần tự, giữ một snapshot mới nhất và ghi DB tối đa mỗi giây.
@@ -207,9 +219,13 @@ class RunService:
             "options": record.options.model_dump(),
         }
         last_write = 0.0
+        last_log = time.monotonic()
         completed = False
         async with self.client.stream(
-            "POST", f"{self.settings.ai_url}/api/v1/inference/video", json=payload
+            "POST",
+            f"{self.settings.ai_url}/api/v1/inference/video",
+            json=payload,
+            headers={"X-VisionKit-Run-ID": record.id},
         ) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
@@ -244,6 +260,15 @@ class RunService:
                 if completed or time.monotonic() - last_write >= 1:
                     self.repository.save(current)
                     last_write = time.monotonic()
+                if completed or time.monotonic() - last_log >= 5:
+                    progress = event.get("progress") or {}
+                    logger.info(
+                        "%s video: %s frame, %s FPS.",
+                        "Hoàn tất" if completed else "Đang xử lý",
+                        progress.get("frames_processed", "?"),
+                        progress.get("processing_fps", "?"),
+                    )
+                    last_log = time.monotonic()
                 if completed:
                     break
         if not completed:
@@ -253,9 +278,11 @@ class RunService:
         """Giải phóng lease đúng một lần, kể cả huỷ task trước khi coroutine bắt đầu."""
         model_id = self.pinned.pop(run_id, None)
         if model_id:
-            self.models.in_use[model_id] = max(
-                0, self.models.in_use.get(model_id, 1) - 1
-            )
+            remaining = self.models.in_use.get(model_id, 1) - 1
+            if remaining > 0:
+                self.models.in_use[model_id] = remaining
+            else:
+                self.models.in_use.pop(model_id, None)
         self.tasks.pop(run_id, None)
 
     def _finished(self, task: asyncio.Task) -> None:

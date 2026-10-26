@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { restoreRun } from "./restore-run";
 import type { VisionSource } from "@/features/sources/types";
 import type { YoloParameters } from "@/features/pipelines/yolo/types";
 import {
@@ -41,13 +42,17 @@ export function useInferenceRun(
       /* sessionStorage best effort. */
     }
     if (id)
-      void getRun(id, controller.signal)
+      void restoreRun(
+        () => getRun(id!, controller.signal),
+        source?.kind,
+        controller.signal,
+      )
         .then((next) => {
-          if (!controller.signal.aborted) setRun(next);
+          if (next && !controller.signal.aborted) setRun(next);
         })
         .catch(() => {});
     return () => controller.abort();
-  }, [selectionKey]);
+  }, [selectionKey, source?.kind]);
   const active = Boolean(run && ["queued", "running"].includes(run.status));
   useEffect(() => {
     if (!run?.id || !active) return;

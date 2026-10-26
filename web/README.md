@@ -91,7 +91,11 @@ Run both backend 8000 and AI 8001; install AI dependencies with `cd ai && uv syn
 
 ## Video inference preview
 
-The shared `RunWorkspace` / `useInferenceRun` supports uploaded or saved video files alongside images. The request passes the configured `vid_stride`; real WebSocket snapshots update a latest-frame canvas, progress bar, processed count and FPS. Playback starts with the first AI result, muted, without seek controls. On an active-run reload it initially positions near the current AI timestamp; it does not keep a result timeline or continuously synchronize clocks. Stopping inference pauses playback. Terminal results can be inspected near their final AI timestamp. JSON download contains the last frame and summary only, not all video detections.
+The shared `RunWorkspace` / `useInferenceRun` supports uploaded or saved video files alongside images. The request passes the configured `vid_stride`; real WebSocket snapshots update a latest-frame canvas, progress bar, processed count and FPS. Playback starts with the first AI result, muted, without seek controls. On an active-run reload it initially positions near the current AI timestamp; it does not keep a result timeline or continuously synchronize clocks. Stopping inference pauses playback. In the current run view, terminal results remain paused near their final AI timestamp
+and their overlays do not expire. Returning to step 4 after leaving it resets a
+finished/cancelled/failed video to the initial preview, ready for a new run, without
+restoring old progress or annotations. Queued/running video runs still reconnect;
+image results retain their existing restoration behavior. JSON download contains the last frame and summary only, not all video detections.
 
 Browsers must support the original codec (MP4/H.264 is practical); no transcoding is done. Bbox/keypoint output can lag or lead playback, especially on slow hardware. Frames with no objects clear prior annotations, stale active overlays expire, and overlays are hidden after playback ends while AI is still working. Source video itself is never sent frame-by-frame from AI to the browser. Canvas and video playback remain separate.
 
@@ -100,3 +104,31 @@ Browsers must support the original codec (MP4/H.264 is practical); no transcodin
 The result sidebar now contains independent Bounding box, class/confidence label, keypoint-dot and skeleton toggles instead of a continuously changing object list. Preferences persist locally across runs/reload and apply to the canvas only; toggling never re-runs inference or seeks video. Classifier output retains its top prediction as a compact summary.
 
 Pose previews default to the COCO 17-keypoint skeleton preset; a detected non-17 schema disables this preset rather than guessing connections. Points and connecting edges can be shown independently (e.g. skeleton-only with bbox hidden). Empty COCO pose frames keep the configured controls stable and clear the canvas as usual. Other skeleton layouts can be passed through the reusable overlay hook when their schema is configured. The existing confidence/visibility checks also suppress edges whose endpoints are missing or low-confidence.
+
+
+## Runtime log window
+
+The header Log button opens a draggable, resizable, non-modal window on every workspace
+route. It reads real backend/AI logs from `/api/v1/logs` through the Next.js proxy.
+There are no sample entries. Source, level and text filters apply to the latest
+2,000 retained entries; the error filter includes CRITICAL. Search also matches
+logger, traceback and run ID. Timestamps use the browser's local timezone.
+
+Polling is sequential (500 entries/page), drains `has_more`, then waits one second.
+A failed request retains entries/cursor and retries with backoff capped at 30s.
+Requests time out after 5s. Closing, pausing, hiding the tab or unmounting aborts
+in-flight reads and clears scheduled reads; resuming continues the same cursor.
+Clear affects only displayed entries; previously consumed logs are not reloaded.
+Backend restart resets the displayed session; overwritten unread logs and AI
+history gaps show a dismissible notice. AI availability is displayed independently
+of backend connectivity. Log text is rendered as text, never HTML.
+
+Run `npm run test:logs` (Node >=22.18) for bounded retention, pagination, cursor,
+abort/late-response, reconnection and history-reset regression coverage.
+
+The log window supports resizing from all four edges and four corners, including
+touch input. Its minimum size is 360 × 300 px (reduced on smaller screens); resize
+stops 12 px from the viewport edge. Controls adapt to the panel width. Position
+and custom size survive closing and workspace navigation; the expand button
+restores the previous custom size when toggled back. The bottom-right handle also
+supports arrow keys, with Shift for larger steps. Size/position reset on reload.

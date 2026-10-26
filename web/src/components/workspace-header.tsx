@@ -1,5 +1,6 @@
 "use client";
 
+import { LogViewer } from "@/features/logs/log-viewer";
 import { BackendStatus } from "@/components/backend-status";
 import { usePathname } from "next/navigation";
 import { isRouteActive, workspaceNavigation } from "@/lib/navigation";
@@ -33,6 +34,8 @@ export function WorkspaceHeader() {
         </span>
       </div>
       <BackendStatus />
+      <Separator orientation="vertical" className="data-vertical:h-4 data-vertical:self-auto" />
+      <LogViewer />
     </header>
   );
 }

@@ -12,6 +12,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.core.logs import LogBuffer
 from app.main import create_app
 
 ORIGINAL_CLIENT = httpx.AsyncClient
@@ -35,6 +36,7 @@ class ModelInspectionTests(unittest.TestCase):
         self.mode = "ready"
         self.delay = 0.02
         self.requests = []
+        self.ai_logs = LogBuffer("ai")
         self.stack.enter_context(
             patch(
                 "app.modules.models.service.httpx.AsyncClient",
@@ -50,6 +52,11 @@ class ModelInspectionTests(unittest.TestCase):
 
     async def handle(self, request: httpx.Request) -> httpx.Response:
         """Trả kết quả AI theo mode, mô phỏng độ trễ để quan sát trạng thái đang đọc."""
+        if request.url.path == "/api/v1/logs":
+            return httpx.Response(
+                200,
+                json=self.ai_logs.read(request.url.params.get("after")).model_dump(),
+            )
         self.requests.append(request)
         await anyio.sleep(self.delay)
         if self.mode == "offline":

@@ -2,8 +2,10 @@
 
 import contextlib
 import hashlib
+import json
 import os
 import sys
+import traceback
 from pathlib import Path
 
 from app.contracts.model import InspectResult
@@ -22,6 +24,7 @@ def main() -> None:
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     os.environ["OMP_NUM_THREADS"] = "1"
     path = Path(sys.argv[1])
+    trace = None
     try:
         digest = hashlib.sha256()
         with path.open("rb") as stream:
@@ -45,11 +48,16 @@ def main() -> None:
             message=None if complete else "File thiếu thông tin họ model hoặc tác vụ.",
         )
     except Exception:
+        traceback.print_exc(file=sys.stderr)
+        trace = traceback.format_exc()[-8192:]
         result = InspectResult(
             status="failed",
             message="Không đọc được metadata. File có thể hỏng hoặc chưa được hỗ trợ.",
         )
-    print(result.model_dump_json())
+    output = result.model_dump()
+    if trace:
+        output["traceback"] = trace
+    print(json.dumps(output, allow_nan=False))
 
 
 if __name__ == "__main__":

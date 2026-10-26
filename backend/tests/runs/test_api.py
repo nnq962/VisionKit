@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.core.config import Settings
+from app.core.logs import LogBuffer
 from app.main import create_app
 
 CLIENT = httpx.AsyncClient
@@ -113,6 +114,8 @@ class RunTests(unittest.TestCase):
             ai_url="http://ai.test",
         )
         self.video_partial = False
+        self.ai_logs = LogBuffer("ai")
+        self.inference_headers = []
         self.delay = 0.01
         self.ai_fail = False
         self.stack.enter_context(
@@ -143,6 +146,13 @@ class RunTests(unittest.TestCase):
 
     async def handle(self, request: httpx.Request) -> httpx.Response:
         """Mô phỏng inspect và inference với độ trễ/lỗi có kiểm soát."""
+        if request.url.path == "/api/v1/logs":
+            return httpx.Response(
+                200,
+                json=self.ai_logs.read(request.url.params.get("after")).model_dump(),
+            )
+        if "/inference/" in request.url.path:
+            self.inference_headers.append(request.headers.get("X-VisionKit-Run-ID"))
         if request.url.path.endswith("inspect"):
             return httpx.Response(
                 200,
@@ -210,6 +220,11 @@ class RunTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202, response.text)
         run = self.wait(response.json()["id"])
         self.assertEqual(run["status"], "completed", run)
+        self.assertIn(run["id"], self.inference_headers)
+        logs = self.client.get("/api/v1/logs", params={"run_id": run["id"]}).json()[
+            "items"
+        ]
+        self.assertTrue(any("Hoàn tất inference" in entry["message"] for entry in logs))
         self.assertEqual(run["result"]["detections"][0]["label"], "person")
         self.assertEqual(self.client.get("/api/v1/sources").json()["total"], 0)
         self.assertEqual(
@@ -241,6 +256,14 @@ class RunTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202, response.text)
         self.assertEqual(self.wait(response.json()["id"])["status"], "completed")
         self.assertEqual(self.client.get("/api/v1/sources").json()["total"], 1)
+
+    def test_completed_runs_remove_unused_model_counter(self) -> None:
+        """Chạy xong không giữ khoá model giá trị 0; giải phóng lặp không ảnh hưởng lượt khác."""
+        record = self.wait(self.start().json()["id"])
+        self.assertEqual(record["status"], "completed")
+        self.assertNotIn(self.model_id, self.app.state.models.in_use)
+        self.app.state.runs._release(record["id"])
+        self.assertNotIn(self.model_id, self.app.state.models.in_use)
 
     def test_cancel_and_protect_active_model(self) -> None:
         """Model đang chạy không bị xoá; huỷ giải phóng lease và không ghi kết quả muộn."""

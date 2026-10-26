@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 
 
@@ -37,10 +38,15 @@ def main() -> None:
             result = predict_image(model_path, source_path, request)
         output = {"result": result}
     except ValueError as error:
-        output = {"error": str(error)[:250]}
-    except Exception:
         output = {
-            "error": "Không chạy được model. Kiểm tra định dạng và khả năng tương thích của model."
+            "error": str(error)[:250],
+            "traceback": traceback.format_exc()[-8192:],
+        }
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+        output = {
+            "error": "Không chạy được model. Kiểm tra định dạng và khả năng tương thích của model.",
+            "traceback": traceback.format_exc()[-8192:],
         }
     print(json.dumps(output, allow_nan=False))
 

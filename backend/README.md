@@ -169,3 +169,83 @@ Video inputs use the same run routes and 24-hour snapshot retention as images, w
 Backend consumes AI NDJSON as it arrives, keeps one latest frame per active run and publishes snapshots through the existing WebSocket (up to about 20 snapshots/s; intermediate frames can be dropped for a slow consumer). Only the latest result is retained, with SQLite checkpoints at most once per second and a final terminal write. No per-frame timeline or annotated-video artifact is stored. Frame IDs, timestamps, counts, FPS and percent appear under `result`/`progress`. An error/early stream EOF is failed rather than completed, retaining the last partial frame; cancellation similarly retains the last progress and releases the model lease.
 
 The backend explicitly depends on `websockets` for Uvicorn's WebSocket runtime. `uv sync` then restart/reload the backend after dependency changes; Next forwards the same-origin `/api/v1/runs/{id}/events` upgrade. HTTP polling remains a fallback when a deployment proxy blocks WebSockets. One backend and one AI worker are recommended for the in-process MVP queue.
+
+## Centralized runtime logs
+
+`GET /api/v1/logs` is the single read API for a future web log viewer. No UI is
+included. A separate backend task collects AI logs every second, independently of
+inference and browser connections. Existing terminal handlers remain in place.
+Capture includes Python `app` logs, Uvicorn server/access logs and AI worker stderr;
+it is not a mirror of arbitrary OS terminal output.
+
+| Query | Behaviour |
+|---|---|
+| `after` | Opaque `next_cursor` from the previous response; omit on first read or filter change |
+| `limit` | Matching entries per page, default 200, range 1–500 |
+| `service` | Optional `backend` or `ai`; omit for both |
+| `min_level` | DEBUG, INFO (default), WARNING, ERROR, CRITICAL; capture starts at INFO |
+| `run_id` | Optional UUID to follow one inference run across services |
+
+Example: `/api/v1/logs?service=ai&min_level=WARNING&limit=100`.
+Each item has `id`, `timestamp` (UTC), `service`, `level`, `logger`, `message`,
+nullable `run_id`, nullable `traceback`, and nullable `source_id` (original AI ID).
+The merged `id` follows backend ingestion order; AI timestamps are preserved and
+can arrive later than backend timestamps. Do not use timestamp as a cursor.
+
+The response contains:
+
+- `items`, `next_cursor`: append items and pass the cursor unchanged on the next
+  request, even if items is empty. Reset pagination when changing filters.
+- `has_more`: drain remaining pages, then poll about once a second.
+- `reset`: backend session changed or cursor is ahead; discard old pagination state.
+- `dropped`: unread entries were evicted from the backend buffer.
+- `ai.configured`, `ai.available`: configured flag and null before first attempt,
+  false on collection failure, true on success. Backend logs stay readable offline.
+- `ai.last_success_at`: last successful collection timestamp, initially null.
+- `ai.reset_count`, `ai.dropped_batches`: cumulative AI restart/gap counters,
+  separate from backend cursor gaps. Both start at zero.
+
+Inference sends `X-VisionKit-Run-ID` to AI; both services tag task logs with that
+UUID without changing inference JSON contracts. General startup/access/model
+inspection logs may have null `run_id` and remain visible without that filter.
+
+Each service uses a **RAM ring of 2,000 entries**, with message and traceback each
+capped at 8,192 characters. Restart loses local history; there is no log archive
+in SQLite or files. Run **one Uvicorn worker per service** for this MVP. The
+collector fetches at most four pages of 500 entries per cycle.
+
+Worker stderr is drained concurrently in bounded chunks, recorded as INFO, with
+at most 20 entries/second per worker plus a warning counting omitted entries.
+Structured image/video/inspection failures are ERROR, with a bounded, redacted
+`traceback` on the same log entry when the worker caught an exception. This entry
+is independent of stderr throttling, so an ERROR filter retains the diagnostic
+traceback. Raw stderr remains INFO. Backend video progress is logged at most
+once every five seconds plus completion. No per-detection log is generated and
+this feature does not change inference pacing.
+
+Health/log polling access logs are excluded to prevent self-generated noise.
+Responses use `Cache-Control: no-store`. Common credential patterns are redacted
+and terminal control sequences stripped; callers must still avoid logging secrets.
+AI logs remain on its loopback/internal API; the web only calls backend and needs
+no direct AI connection. Logs follow the current local API trust model.
+
+### Web viewer integration
+
+- Use only the backend `/api/v1/logs` endpoint through the existing web proxy.
+  Worker traceback details belong to this API; inference response schemas stay unchanged.
+- Keep at most 2,000 displayed entries and use `id` as the row/deduplication key.
+  Advance `after` from every successful response, including empty pages. Reset
+  cursor and displayed entries when filters change or the server returns `reset`.
+- Fetch sequentially, drain `has_more` pages, then poll about once per second.
+  Abort pending fetches on unmount/filter change and pause polling in hidden tabs.
+  Cancel scheduled retries on unmount; avoid overlapping requests.
+- Show backend `dropped` gaps and changes in AI `reset_count`/`dropped_batches`.
+  Treat `ai.available: null` as not yet checked and `false` as unavailable; keep
+  backend logs visible. On HTTP/network errors, retain entries/cursor and retry
+  with bounded backoff. Render messages/tracebacks as text.
+
+Image and inspection worker stdout is capped at 8 MiB; video retains its 8 MiB
+per-event cap. Overflow fails the operation and reaps the worker while draining
+remaining pipes in bounded chunks. These limits bound transport buffers, not
+model inference RAM/VRAM. Backend lifespan cleanup also runs after partial startup
+failure, and unused model lease counters are removed when their count reaches zero.

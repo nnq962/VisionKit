@@ -65,7 +65,7 @@ export function useDetectionOverlay({
   }, [options, staleAfterMs, redraw]);
   useEffect(() => {
     if (result !== undefined) setResult(result);
-  }, [result, setResult]);
+  }, [result, staleAfterMs, setResult]);
 
   useEffect(() => {
     if (!media || !canvas) return;

@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 
 
@@ -43,10 +44,21 @@ def main() -> None:
         with contextlib.redirect_stdout(sys.stderr):
             predict_video(model, source, request, publish)
     except ValueError as error:
-        publish({"type": "error", "error": str(error)[:250]})
-    except Exception:
         publish(
-            {"type": "error", "error": "Không xử lý được video bằng model đã chọn."}
+            {
+                "type": "error",
+                "error": str(error)[:250],
+                "traceback": traceback.format_exc()[-8192:],
+            }
+        )
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+        publish(
+            {
+                "type": "error",
+                "error": "Không xử lý được video bằng model đã chọn.",
+                "traceback": traceback.format_exc()[-8192:],
+            }
         )
 
 

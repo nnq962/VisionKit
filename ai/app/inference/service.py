@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from collections.abc import AsyncIterator
@@ -9,6 +10,9 @@ from pathlib import Path
 
 from app.contracts.prediction import PredictRequest
 from app.core.config import Settings
+from app.core.worker_logs import drain_stderr, read_worker_output, stop_worker
+
+logger = logging.getLogger(__name__)
 
 
 # ----------------------------- Service inference -----------------------------
@@ -56,28 +60,38 @@ class InferenceService:
                 str(source),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
                 env={
                     **os.environ,
                     "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
                 },
             )
+            stderr_task = asyncio.create_task(drain_stderr(process.stderr))
+            logger.info("Worker inference đã khởi động; pid=%s.", process.pid)
             try:
                 stdout, _ = await asyncio.wait_for(
-                    process.communicate(request.model_dump_json().encode()), 180
+                    read_worker_output(process, request.model_dump_json().encode()), 180
                 )
                 if process.returncode != 0:
+                    logger.error(
+                        "Worker inference dừng bất thường; mã=%s.", process.returncode
+                    )
                     raise ValueError("Worker inference dừng bất thường.")
                 output = json.loads(stdout)
                 if output.get("error"):
+                    logger.error(
+                        "Inference ảnh thất bại: %s",
+                        output["error"],
+                        extra={"worker_traceback": output.get("traceback")},
+                    )
                     raise ValueError(output["error"])
                 return output["result"]
             except asyncio.TimeoutError as error:
+                logger.error("Inference quá thời gian chờ.")
                 raise ValueError("Inference quá thời gian chờ.") from error
             finally:
-                if process.returncode is None:
-                    process.kill()
-                    await process.wait()
+                await stop_worker(process, stderr_task)
+                logger.info("Worker inference đã dừng; mã=%s.", process.returncode)
 
     async def video(self, request: PredictRequest) -> AsyncIterator[dict]:
         """Phát NDJSON frame từ worker, giới hạn idle 180 giây và tổng lượt chạy bốn giờ.
@@ -106,13 +120,15 @@ class InferenceService:
                 str(source),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
                 limit=8 * 1024 * 1024,
                 env={
                     **os.environ,
                     "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
                 },
             )
+            stderr_task = asyncio.create_task(drain_stderr(process.stderr))
+            logger.info("Worker video đã khởi động; pid=%s.", process.pid)
             try:
                 process.stdin.write(request.model_dump_json().encode())
                 await process.stdin.drain()
@@ -129,6 +145,12 @@ class InferenceService:
                     if not line:
                         break
                     event = json.loads(line)
+                    if event.get("type") == "error":
+                        logger.error(
+                            "Inference video thất bại: %s",
+                            event.get("error"),
+                            extra={"worker_traceback": event.pop("traceback", None)},
+                        )
                     yield event
                     if event.get("type") == "completed":
                         completed = True
@@ -142,6 +164,5 @@ class InferenceService:
                     "AI không trả frame mới trong thời gian chờ."
                 ) from error
             finally:
-                if process.returncode is None:
-                    process.kill()
-                await process.wait()
+                await stop_worker(process, stderr_task)
+                logger.info("Worker video đã dừng; mã=%s.", process.returncode)

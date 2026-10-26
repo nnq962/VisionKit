@@ -67,7 +67,7 @@ export function YoloPipeline() {
       <WorkspaceSection
         title={steps[step]}
         titleId="step-heading"
-        footer={
+        actions={
           <>
             <Button
               variant="outline"

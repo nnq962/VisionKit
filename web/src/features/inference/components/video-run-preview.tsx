@@ -61,7 +61,7 @@ export function VideoRunPreview({
             : null
         }
         options={options}
-        staleAfterMs={2000}
+        staleAfterMs={playing ? 2000 : 0}
         className="rounded-lg"
         videoProps={{
           controls: false,

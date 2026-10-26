@@ -55,3 +55,27 @@ Results normalize detections/pose keypoints into original image pixel coordinate
 `POST /api/v1/inference/video` accepts the same request contract plus `options.vid_stride` (1–120), and streams `application/x-ndjson`: `frame`, `completed` or `error` events. Each frame includes original-coordinate detections, frameId/timestampMs and progress (processed count, source frame index, estimated total, source FPS, effective processing FPS, percent). Empty detections are emitted too. The worker loads the model once, uses local OpenCV/FFmpeg capture, applies rotation metadata to match browser display, and restricts protocols to file/pipe. It processes every Nth source frame, pacing at no faster than source time; slower hardware can lag the browser preview. It sends JSON only, never annotated video frames.
 
 Image and video workers share one AI inference semaphore. Video supports the existing PT/ONNX adapters and device rules. The default input cap is 200 MiB via `VISIONKIT_MAX_VIDEO_UPLOAD_MB` (set consistently with backend); an event is capped at 8 MiB, idle timeout is 180 seconds, overall video run cap is four hours. Cancelling the HTTP stream or closing the generator kills the worker and releases capture/semaphore. No frame history, tracking or reconnect/resume within an interrupted video run.
+
+## Runtime logs
+
+`GET /api/v1/logs` is an internal, read-only endpoint for the backend collector.
+It accepts `after`, `limit` (1–500, default 200), `min_level` (default INFO) and
+optional UUID `run_id`. It returns `items`, `next_cursor`, `has_more`, `reset` and
+`dropped`. See the complete web-facing contract in
+[`../backend/README.md`](../backend/README.md#centralized-runtime-logs).
+
+App/Uvicorn logs and worker stderr are retained in a 2,000-entry RAM ring per
+process. Restart loses history; run one Uvicorn worker. Stderr is drained alongside
+stdout without mixing log text into JSON/NDJSON. Worker messages are INFO,
+structured image/video/inspection failures are ERROR. Caught worker exceptions
+include a bounded traceback in the structured worker response; the API records it
+on the ERROR entry independently of stderr throttling, then removes it from public
+inference responses. Unexpected exceptions also write tracebacks to stderr.
+Stderr floods are bounded and summarized. Image/inspection stdout is limited to
+8 MiB; video is limited to 8 MiB per event. Overflow, timeout and cancellation
+kill/reap workers and drain remaining pipes without accumulating discarded output.
+
+`X-VisionKit-Run-ID` (UUID) propagates inference correlation from backend into AI
+tasks and worker stderr capture without changing model request payloads. The
+logging path never waits for a browser viewer. Log polling and health checks do
+not produce log entries in the buffer.
