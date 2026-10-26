@@ -1,7 +1,7 @@
 """Ghi trạng thái tải và model vào SQLite bằng các kết nối ngắn hạn."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.db.connection import Database
@@ -33,7 +33,7 @@ class ModelRepository:
         """Trả tất cả model đã lưu, mới nhất trước; dữ liệu chỉ gồm metadata."""
         with self.database.connection() as connection:
             rows = connection.execute(
-                "SELECT * FROM models ORDER BY saved_at DESC"
+                "SELECT * FROM models WHERE expires_at IS NULL ORDER BY saved_at DESC"
             ).fetchall()
         return [
             StoredModel(
@@ -149,20 +149,75 @@ class ModelRepository:
             )
 
     def create_uploaded(
-        self, variant: ModelArtifact, location: str, size: int, digest: str
+        self,
+        variant: ModelArtifact,
+        location: str,
+        size: int,
+        digest: str,
+        temporary: bool = False,
     ) -> StoredModel:
         """Ghi metadata model upload và trả bản ghi đã lưu.
 
         Nhận variant khai báo, vị trí file, dung lượng thực và checksum; không
-        load weights. Lỗi SQLite rollback bản ghi để service dọn file mới.
+        load weights. temporary=True đặt hạn dùng 24 giờ và ẩn khỏi thư viện;
+        False giữ model lâu dài. Lỗi SQLite rollback bản ghi để service dọn file mới.
         """
         now = timestamp()
         with self.database.connection() as connection:
             connection.execute(
-                "INSERT INTO models (id,variant_json,location,size_bytes,sha256,saved_at) VALUES (?,?,?,?,?,?)",
-                (variant.id, variant.model_dump_json(), location, size, digest, now),
+                "INSERT INTO models (id,variant_json,location,size_bytes,sha256,saved_at,expires_at) VALUES (?,?,?,?,?,?,?)",
+                (
+                    variant.id,
+                    variant.model_dump_json(),
+                    location,
+                    size,
+                    digest,
+                    now,
+                    self.expiry() if temporary else None,
+                ),
             )
         return self.model(variant.id)
+
+    def expiry(self) -> str:
+        """Trả hạn dùng tạm 24 giờ từ hiện tại theo UTC, không ghi DB."""
+        return (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(
+            timespec="microseconds"
+        )
+
+    def touch(self, model_id: str) -> None:
+        """Gia hạn model tạm còn hiệu lực thêm 24 giờ khi được truy cập; không đổi model thư viện."""
+        with self.database.connection() as connection:
+            connection.execute(
+                "UPDATE models SET expires_at=? WHERE id=? AND expires_at>?",
+                (self.expiry(), model_id, timestamp()),
+            )
+
+    def expired_ids(self) -> list[str]:
+        """Liệt kê ID model tạm hết hạn để service huỷ inspect và dọn file/DB."""
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                "SELECT id FROM models WHERE expires_at<=?", (timestamp(),)
+            ).fetchall()
+        return [row["id"] for row in rows]
+
+    def promote(self, model_id: str, name: str) -> StoredModel:
+        """Chuyển model tạm sang thư viện trong transaction, giữ file/metadata/ID và đặt tên mới.
+
+        Service kiểm tra model tồn tại/còn hạn trước khi gọi. Không sao chép
+        hoặc upload lại weights; gọi lại với model đã lưu không tạo bản sao.
+        """
+        with self.database.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT variant_json FROM models WHERE id=?", (model_id,)
+            ).fetchone()
+            variant = json.loads(row["variant_json"])
+            variant["name"] = name
+            connection.execute(
+                "UPDATE models SET expires_at=NULL,variant_json=?,saved_at=? WHERE id=?",
+                (json.dumps(variant, ensure_ascii=False), timestamp(), model_id),
+            )
+        return self.model(model_id)
 
     def set_inspection(
         self, model_id: str, result: ModelInspection

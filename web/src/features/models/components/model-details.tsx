@@ -1,4 +1,4 @@
-import { ModelMetadataPanel } from "./model-metadata";
+import { ModelMetadataPanel, ModelMetadataStatus } from "./model-metadata";
 import type { ModelSelection } from "../use-model-selection";
 import { BoxIcon, CheckIcon } from "lucide-react";
 import { formatBytes } from "@/features/sources/media-metadata";
@@ -13,12 +13,23 @@ export function ModelDetails({
 }: {
   model: StoredModel | null;
   draft?: ModelDraft;
-  selection?: ModelSelection;
+  selection?: Pick<
+    ModelSelection,
+    "inspecting" | "retryInspection" | "configure"
+  >;
 }) {
-  const file = draft?.file;
+  const file = model ? null : draft?.file;
   const title = file
-    ? draft.name || file.name
+    ? draft?.name || file.name
     : (model?.name ?? model?.filename);
+  const metadata = model?.inspection.metadata;
+  const family =
+    metadata?.family ??
+    (model?.familyId.startsWith("yoloe")
+      ? "yoloe"
+      : model?.familyId.startsWith("yolo")
+        ? "yolo"
+        : null);
   const details = file
     ? [
         ["Tệp", file.name],
@@ -28,7 +39,16 @@ export function ModelDetails({
     : model
       ? [
           ["Tệp", model.filename],
-          ["Họ model", model.familyName],
+          [
+            "Họ model",
+            family === "yoloe"
+              ? "YOLOE"
+              : family === "yolo"
+                ? "YOLO"
+                : "Chưa xác định",
+          ],
+          ["Dòng model", metadata?.model_series ?? "Chưa xác định"],
+          ["Biến thể", metadata?.scale ?? "Chưa xác định"],
           ["Tác vụ", modelTaskLabel(model.task)],
           ["Định dạng", (model.format ?? "pt").toUpperCase()],
           ["Dung lượng", formatBytes(model.sizeBytes)],
@@ -48,36 +68,45 @@ export function ModelDetails({
             <p className="break-all text-sm font-medium">{title}</p>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               {!file && <CheckIcon className="size-3.5" />}
-              {file ? "Bản nháp chưa lưu" : "Đã lưu trong thư viện"}
+              {file
+                ? "Đang chuẩn bị model"
+                : model?.expiresAt
+                  ? "Model tạm · Chưa lưu thư viện"
+                  : "Đã lưu trong thư viện"}
             </p>
+            {model && selection && (
+              <ModelMetadataStatus model={model} selection={selection} />
+            )}
           </div>
-          <dl className="divide-y text-sm">
-            {details.map(([label, value]) => (
-              <div
-                key={label}
-                className="flex justify-between gap-4 py-3 first:pt-0"
-              >
-                <dt className="shrink-0 text-muted-foreground">{label}</dt>
-                <dd
-                  className="min-w-0 break-all text-right font-medium"
-                  title={label === "SHA-256" ? model?.sha256 : undefined}
+          <div className="space-y-0">
+            <dl className="divide-y text-sm">
+              {details.map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex justify-between gap-4 py-3 first:pt-0"
                 >
-                  {value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          {file ? (
-            <p className="text-xs leading-5 text-muted-foreground">
-              Metadata sẽ được đọc sau khi lưu.
-            </p>
-          ) : model && selection ? (
-            <ModelMetadataPanel
-              key={model.id}
-              model={model}
-              selection={selection}
-            />
-          ) : null}
+                  <dt className="shrink-0 text-muted-foreground">{label}</dt>
+                  <dd
+                    className="min-w-0 break-all text-right font-medium"
+                    title={label === "SHA-256" ? model?.sha256 : undefined}
+                  >
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {file ? (
+              <p className="text-xs leading-5 text-muted-foreground">
+                Tự động đọc metadata sau khi tải lên.
+              </p>
+            ) : model && selection ? (
+              <ModelMetadataPanel
+                key={model.id}
+                model={model}
+                selection={selection}
+              />
+            ) : null}
+          </div>
         </>
       ) : (
         <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-lg bg-muted/30 text-muted-foreground">

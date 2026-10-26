@@ -55,7 +55,7 @@ export function ModelUploadForm({ selection }: { selection: ModelSelection }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={selection.uploading}
+                    disabled={selection.uploading || selection.saving}
                     onClick={() => input.current?.click()}
                   >
                     Đổi tệp
@@ -63,7 +63,7 @@ export function ModelUploadForm({ selection }: { selection: ModelSelection }) {
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={selection.uploading}
+                    disabled={selection.uploading || selection.saving}
                     onClick={() => setDiscarding(true)}
                   >
                     Bỏ tệp
@@ -92,7 +92,7 @@ export function ModelUploadForm({ selection }: { selection: ModelSelection }) {
             type="file"
             accept=".pt,.onnx"
             className="sr-only"
-            disabled={selection.uploading}
+            disabled={selection.uploading || selection.saving}
             onChange={(event) => {
               choose(event.target.files);
               event.target.value = "";
@@ -137,7 +137,7 @@ export function ModelUploadForm({ selection }: { selection: ModelSelection }) {
               id="pipeline-model-name"
               value={selection.name}
               maxLength={120}
-              disabled={selection.uploading}
+              disabled={selection.uploading || selection.saving}
               onChange={(event) =>
                 selection.update({ name: event.target.value })
               }
@@ -148,7 +148,7 @@ export function ModelUploadForm({ selection }: { selection: ModelSelection }) {
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span role="status">
                   {selection.progress === 100
-                    ? "Đang lưu model…"
+                    ? "Đang chuẩn bị metadata…"
                     : "Đang tải lên…"}
                 </span>
                 <span className="tabular-nums">{selection.progress}%</span>
@@ -168,13 +168,23 @@ export function ModelUploadForm({ selection }: { selection: ModelSelection }) {
               </div>
             </div>
           )}
+          {!selection.uploading && !selection.selected && (
+            <Button variant="outline" onClick={() => void selection.stage()}>
+              Thử tải lại
+            </Button>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              disabled={selection.uploading || !selection.name.trim()}
+              disabled={
+                selection.uploading ||
+                selection.saving ||
+                !selection.temporaryId ||
+                !selection.name.trim()
+              }
               onClick={() => void selection.save()}
             >
               <UploadIcon />
-              {selection.uploading ? "Đang lưu…" : "Lưu và đọc metadata"}
+              {selection.saving ? "Đang lưu…" : "Lưu vào thư viện"}
             </Button>
             {selection.uploading && selection.progress < 100 && (
               <Button variant="outline" onClick={selection.cancel}>
@@ -183,7 +193,7 @@ export function ModelUploadForm({ selection }: { selection: ModelSelection }) {
             )}
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
-            Họ model và tác vụ sẽ được nhận diện tự động.
+            Có thể tiếp tục với model tạm mà không cần lưu.
           </p>
         </>
       )}

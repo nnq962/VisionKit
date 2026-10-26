@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { SourceDatabase } from "@/features/database/source-database";
+import { DatabaseWorkspace } from "@/features/database/database-workspace";
 
 export const metadata: Metadata = { title: "Database" };
 
 export default function DatabasePage() {
-  return <SourceDatabase />;
+  return <DatabaseWorkspace />;
 }

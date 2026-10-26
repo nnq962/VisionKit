@@ -11,7 +11,9 @@ class Settings:
     """Giữ models_path được phép đọc và timeout cho mỗi tiến trình kiểm tra."""
 
     models_path: Path
+    runs_path: Path | None = None
     inspect_timeout: float = 90
+    max_video_bytes: int = 200 * 1024 * 1024
     max_model_bytes: int = 1024 * 1024 * 1024
 
 
@@ -22,5 +24,11 @@ def load_settings() -> Settings:
     return Settings(
         models_path=Path(os.getenv("VISIONKIT_MODELS_PATH", str(root)))
         .expanduser()
-        .resolve()
+        .resolve(),
+        max_video_bytes=int(os.getenv("VISIONKIT_MAX_VIDEO_UPLOAD_MB", "200"))
+        * 1024
+        * 1024,
+        runs_path=Path(os.getenv("VISIONKIT_RUNS_PATH", str(root.parent / "runs")))
+        .expanduser()
+        .resolve(),
     )

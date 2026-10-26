@@ -14,7 +14,7 @@ from app.storage.model_files import ModelFiles
 
 from .catalog.ultralytics import get_variant
 from .inspection import ModelInspector
-from .repository import ModelRepository
+from .repository import ModelRepository, timestamp
 from .schemas import DownloadJob, ModelArtifact, StoredModel
 
 logger = logging.getLogger(__name__)
@@ -50,17 +50,23 @@ class ModelService:
         self.semaphore = asyncio.Semaphore(settings.model_download_concurrency)
         self.lock = asyncio.Lock()
         self.tasks: dict[str, asyncio.Task] = {}
+        self.in_use: dict[str, int] = {}
         self.closing = False
+        self.cleanup_task: asyncio.Task | None = None
 
     def available(self, model_id: str) -> StoredModel:
         """Trả model có file còn tồn tại và đúng dung lượng; 404/409 nếu file đã mất/thay đổi.
 
         Nhận ID trong thư viện và kiểm tra file local; không load weights hoặc
         khẳng định tương thích Ultralytics. Dùng trước khi chọn model cho pipeline.
+        Model tạm hết hạn trả 410; model còn hạn được gia hạn thêm 24 giờ trong DB.
         """
         model = self.repository.model(model_id)
         if model is None:
             raise SourceError(404, "Model không còn trong thư viện. Hãy chọn lại.")
+        if model.expires_at and model.expires_at <= timestamp():
+            raise SourceError(410, "Model tạm đã hết hạn. Hãy chọn lại tệp.")
+        self.repository.touch(model_id)
         path = self.files.path(model.location)
         if not path.is_file():
             raise SourceError(
@@ -79,6 +85,7 @@ class ModelService:
         name: str | None,
         family: str | None,
         task: str | None,
+        temporary: bool = False,
     ) -> StoredModel:
         """Lưu weights riêng và metadata do người dùng khai báo; rollback file nếu DB lỗi.
 
@@ -87,7 +94,8 @@ class ModelService:
             filename: Tên gốc, được loại bỏ mọi thành phần đường dẫn.
             name: Tên hiển thị tuỳ chọn, tối đa 120 ký tự.
             family: yolo hoặc yoloe, không tự suy đoán từ tên file.
-            task: Tác vụ đã được router kiểm tra.
+            task: Tác vụ đã được router kiểm tra, có thể chưa xác định.
+            temporary: True tạo model tạm 24 giờ, False lưu thẳng vào thư viện.
         Trả về:
             Model có UUID riêng, origin upload và checksum của nội dung đã lưu.
         Ngoại lệ:
@@ -124,7 +132,9 @@ class ModelService:
                 expected_bytes=size,
                 sha256=digest,
             )
-            return self.repository.create_uploaded(variant, location, size, digest)
+            return self.repository.create_uploaded(
+                variant, location, size, digest, temporary=temporary
+            )
         except Exception:
             self.files.path(location).unlink(missing_ok=True)
             raise
@@ -242,11 +252,25 @@ class ModelService:
                 self.tasks.pop(job_id, None)
             return self.get_job(job_id)
 
-    async def delete(self, model_id: str) -> None:
-        """Xoá bản ghi và weights; khôi phục file nếu DB báo lỗi, từ chối ID lạ bằng 404."""
+    async def delete(self, model_id: str, expired_only: bool = False) -> None:
+        """Xoá bản ghi/file theo model_id, huỷ inspect; khôi phục file nếu DB báo lỗi.
+
+        expired_only=True chỉ xoá model vẫn hết hạn tại thời điểm giữ lock,
+        bỏ qua model đã được lưu hoặc gia hạn. Xoá thường trả 404 nếu ID không có.
+        """
         async with self.lock:
-            await self.inspector.cancel(model_id)
             model = self.repository.model(model_id)
+            if self.in_use.get(model_id, 0):
+                if expired_only:
+                    return
+                raise SourceError(
+                    409, "Model đang dùng trong lượt chạy. Hãy dừng trước khi xoá."
+                )
+            if expired_only and (
+                model is None or not model.expires_at or model.expires_at > timestamp()
+            ):
+                return
+            await self.inspector.cancel(model_id)
             if model is None:
                 raise SourceError(404, "Không tìm thấy model đã lưu.")
             path = self.files.path(model.location)
@@ -262,9 +286,35 @@ class ModelService:
                 raise
             temporary.unlink(missing_ok=True)
 
+    async def promote(self, model_id: str, name: str) -> StoredModel:
+        """Lưu model tạm còn hạn vào thư viện, đồng bộ với cleanup để không xoá nhầm file."""
+        title = name.strip()
+        if not title or len(title) > 120:
+            raise SourceError(422, "Tên model phải có từ 1 đến 120 ký tự.")
+        async with self.lock:
+            self.available(model_id)
+            return self.repository.promote(model_id, title)
+
+    async def cleanup_temporary(self) -> None:
+        """Dọn model tạm hết hạn cùng task inspect; giữ nguyên model đã gia hạn hoặc lưu thư viện."""
+        for model_id in self.repository.expired_ids():
+            await self.delete(model_id, expired_only=True)
+
+    async def maintain_temporary(self) -> None:
+        """Dọn model hết hạn mỗi 10 phút đến khi shutdown; ghi log lỗi để vòng dọn vẫn tiếp tục."""
+        while True:
+            await asyncio.sleep(600)
+            try:
+                await self.cleanup_temporary()
+            except Exception:
+                logger.warning("Temporary model cleanup failed", exc_info=True)
+
     async def shutdown(self) -> None:
         """Dừng mọi task nền, ghi trạng thái gián đoạn và đóng HTTP client khi app dừng."""
         self.closing = True
+        if self.cleanup_task:
+            self.cleanup_task.cancel()
+            await asyncio.gather(self.cleanup_task, return_exceptions=True)
         tasks = list(self.tasks.values())
         for task in tasks:
             task.cancel()

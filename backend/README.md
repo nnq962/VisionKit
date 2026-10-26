@@ -119,10 +119,53 @@ The previous browser-only Model Hub preview data is ignored. The real library al
 
 ## Upload custom models and pipeline selection
 
-POST `/api/v1/models/upload` accepts multipart `file` (`.pt` or `.onnx`), optional `name` (1–120 characters), `family=yolo|yoloe`, and `task=detect|segment|pose|classify|obb`. Defaults are `family=yolo` and `task=detect`; YOLOE requires `task=segment`. The backend writes in chunks, computes SHA-256, assigns a UUID and stores the original filename and declared metadata in the existing `models` table. Custom models have `variant.origin=upload`, `variant.size=null`, and optional catalog URL/release fields. Existing catalog models remain compatible; no new migration is needed.
+POST `/api/v1/models/upload` accepts multipart `file` (`.pt` or `.onnx`) and optional `name` (1–120 characters). Legacy optional `family`/`task` fields remain accepted. The backend streams the upload, computes SHA-256, saves a UUID file and SQLite record, then queues AI metadata inspection. HTTP 201 returns the stored model and its `inspection` status; inspection continues after the response. Catalog downloads also queue inspection after successful storage.
 
-Upload defaults to **200 MiB**, configurable with `VISIONKIT_MAX_MODEL_UPLOAD_MB`. GET `/api/v1/models/catalog` returns `max_upload_bytes` for the picker. The web proxy currently allows 210 MiB; raise it alongside the backend setting if needed. Invalid extension returns 415, empty/invalid form 422, oversized file 413. Failed DB inserts remove newly uploaded files. Duplicate filenames receive separate IDs/paths and never overwrite existing weights.
+Upload defaults to **200 MiB**, configurable with `VISIONKIT_MAX_MODEL_UPLOAD_MB`. GET `/api/v1/models/catalog` exposes `max_upload_bytes`. The web proxy allows 210 MiB. Invalid extension returns 415, empty/invalid form 422, oversized file 413. Failed DB inserts remove the new file; duplicate filenames never overwrite existing weights.
 
-This endpoint stores user-declared model files. It does **not** deserialize PyTorch checkpoints, parse ONNX graphs, or verify that the file is an Ultralytics model. Compatibility, actual task detection and inference belong to the AI module. GET `/api/v1/models/{id}` checks that a saved model's file still exists and has the recorded size (404/409 otherwise); the pipeline calls it before advancing from model selection. This check is not a full checksum rescan or an inference test.
+Start the AI service as documented in `../ai/README.md`. `VISIONKIT_AI_URL` defaults to `http://127.0.0.1:8001`; both services must share `VISIONKIT_MODELS_PATH`. Backend has no Torch/Ultralytics dependency. Migration 3 adds persistent `inspection_json` without replacing existing models. Existing models start as `uninspected` and can be inspected when selected.
 
-The web picker supports saved models and custom upload, shows real browser upload progress, and selects the new model only after HTTP 201. The selected model ID and upload draft (File plus declared metadata) persist in browser IndexedDB across steps/routes/reload. Unsaved file drafts remain local until the user presses **Lưu và chọn**. If browser storage fails, the web reports it and warns before leaving with an unpersisted file. Active uploads warn before reload; upload requests themselves do not resume after reload. Model Hub and the picker read the same backend library.
+| Method | Path | Behaviour |
+|---|---|---|
+| POST | `/api/v1/models/{id}/inspect` | Queue/retry metadata extraction; returns 202 with model |
+| GET | `/api/v1/models/{id}` | Current stored model, inferred family/task and inspection result |
+| PATCH | `/api/v1/models/{id}/metadata` | Manual fallback JSON `{ "family": "yolo", "task": "detect" }` |
+
+Inspection states: `uninspected`, `queued`, `processing`, `ready`, `needs_input`, `failed`, `unavailable`, `manual`. Results include format, family, task, names/class count, image size, input shape, stride, architecture, scale, parameters and version where available. AI downtime preserves the upload and returns `unavailable`; users can retry. Missing ONNX metadata permits manual fallback; corrupt/rejected files cannot be manually approved. A ready result describes extracted metadata, not inference validation. Startup/shutdown marks interrupted inspections unavailable for explicit retry.
+
+The web polls selected pending models, shows inferred metadata and permits the next pipeline step only after `ready` or `manual`, checking the file still exists with the recorded size. This is not a full checksum rescan or inference test. Selection and unsaved upload File/name persist in browser IndexedDB; new files upload automatically for temporary inspection; **Lưu vào thư viện** promotes the uploaded file. Active uploads warn before reload and do not resume after reload. Model Hub and the picker share the same backend library.
+
+## Temporary model preview and selection
+
+The pipeline picker now uses `POST /api/v1/models/temporary` (multipart `file`, optional `name`). Selecting a file uploads it immediately and queues metadata extraction. The response contains a model ID usable with the existing detail/inspect/configuration APIs and later pipeline execution. Temporary models have `expires_at`, remain outside `GET /models` / Model Hub, and can pass the selection step after metadata is ready or manually configured. Running inference remains a separate, unimplemented step.
+
+`POST /api/v1/models/{id}/save` with `{ "name": "Model name" }` promotes the same file/ID/metadata into the library, clearing expiry; no second upload or file copy. This endpoint is idempotent for library membership. The original `/upload` endpoint retains its persistent-upload semantics for API compatibility.
+
+Migration 4 adds nullable `expires_at`. Temporary bookkeeping lives in SQLite for restart/reload recovery, while library queries only return records without expiry. Files share managed model storage so the AI service can inspect both. Temporary records expire after **24 hours of inactivity**; access through the detail endpoint, retry/configuration or promotion renews the lease. Startup and a ten-minute background sweep remove expired records/files and cancel their inspection tasks. Expired IDs return 410 until cleanup, then 404. Explicit discard/replacement deletes temporary files immediately; abandoned/interrupted uploads are bounded by expiry. Saved models never expire. A future inference runner must hold/renew the model lease for the duration of a run.
+
+Inspection metadata additionally exposes nullable `model_series`, `series_source` and `ultralytics_version`, separate from broad `family` and `scale`. SQLite inspection JSON retains these fields without a schema migration. Re-inspect previously stored results to populate them.
+
+New source uploads store `metadata.sha256` for the original bytes, computed incrementally during upload, and `preview_size` when a preview sidecar is created. No extra file pass or schema migration is needed. Existing source records remain unchanged and may lack these fields.
+
+## Image inference runs
+
+Start backend 8000 and AI 8001 with the same `VISIONKIT_MODELS_PATH` and `VISIONKIT_RUNS_PATH` (default root `data/models`, `data/runs`). Migration 5 creates the `runs` table. Backend imports no Torch/Ultralytics. Model download/inspection and source APIs remain separate.
+
+- `POST /api/v1/runs`: multipart `model_id`, `options` JSON, and exactly one of uploaded `file` or saved `source_id`; returns 202 with a run. Images, screenshots and video files. Unsaved multipart uploads additionally set `kind=image|screen|video`; saved source IDs determine their kind. Options: numeric `conf`, `iou`, two-element `[height,width]` `imgsz`, `device`, optional class IDs, `max_det`, `agnostic_nms`, and video `vid_stride` (1–120).
+- `GET /api/v1/runs/{id}`: latest state/result; `DELETE` cancels an active run.
+- `GET /api/v1/runs/{id}/preview`: browser-compatible snapshot used for result display.
+- `WS /api/v1/runs/{id}/events`: immediate/current snapshot and updates until terminal; allowed Origin must match backend CORS settings. Client can reconnect or fall back to GET. WebSocket closure alone does not cancel inference.
+
+States: queued → running → completed/failed/cancelled. At most four active/queued runs, one outbound inference request at a time per backend worker. Use one Uvicorn worker for the MVP. Active models are pinned against deletion/temporary-model cleanup; cancelling releases the lease. Input images are copied into run storage, so deleting a library source cannot remove an active run input. Uploading an unsaved image for a run does not save it to the Source library. Failed creation rolls back the snapshot. Repeated POST creates a new run; uploads do not resume across a lost response.
+
+Run snapshots and result JSON expire after 24 hours. Startup and a ten-minute sweep clean expired terminal records/files. Expired records return 410 before cleanup, 404 after; saved library sources/models are unaffected. Backend restart marks interrupted jobs failed. These local DB/file operations are not atomic across power failure; orphan reconciliation remains future work.
+
+Completed JSON contains original-coordinate bbox/keypoints, class scores, actual device, timing and classification top5. Segmentation/OBB polygons are retained in JSON; current canvas UI displays bbox/keypoints only. No RTSP/webcam inference, tracking, model prompting or persistent run library yet.
+
+## Streaming video runs
+
+Video inputs use the same run routes and 24-hour snapshot retention as images, with existing video validation, original copy and thumbnail generation. `GET /runs/{id}/preview` returns the original video (not the JPEG thumbnail), with HTTP Range for browser playback. Source-library records are unchanged.
+
+Backend consumes AI NDJSON as it arrives, keeps one latest frame per active run and publishes snapshots through the existing WebSocket (up to about 20 snapshots/s; intermediate frames can be dropped for a slow consumer). Only the latest result is retained, with SQLite checkpoints at most once per second and a final terminal write. No per-frame timeline or annotated-video artifact is stored. Frame IDs, timestamps, counts, FPS and percent appear under `result`/`progress`. An error/early stream EOF is failed rather than completed, retaining the last partial frame; cancellation similarly retains the last progress and releases the model lease.
+
+The backend explicitly depends on `websockets` for Uvicorn's WebSocket runtime. `uv sync` then restart/reload the backend after dependency changes; Next forwards the same-origin `/api/v1/runs/{id}/events` upgrade. HTTP polling remains a fallback when a deployment proxy blocks WebSockets. One backend and one AI worker are recommended for the in-process MVP queue.

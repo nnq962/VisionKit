@@ -11,6 +11,7 @@ type SourceRecord = {
   content_url: string | null;
   preview_url: string | null;
   created_at: string;
+  updated_at?: string;
 };
 
 type SourcePage = {
@@ -35,6 +36,24 @@ function fromRecord(record: SourceRecord): VisionSource {
       : "pending",
     saved: true,
     createdAt: record.created_at,
+    updatedAt: record.updated_at,
+    originalFilename:
+      typeof record.metadata.original_filename === "string"
+        ? record.metadata.original_filename
+        : undefined,
+    mimeType:
+      typeof record.metadata.mime_type === "string"
+        ? record.metadata.mime_type
+        : undefined,
+    sha256:
+      typeof record.metadata.sha256 === "string"
+        ? record.metadata.sha256
+        : undefined,
+    previewLocation:
+      typeof record.metadata.preview_location === "string"
+        ? record.metadata.preview_location
+        : undefined,
+    previewSize: number("preview_size"),
     previewUrl:
       (record.kind === "video"
         ? record.content_url

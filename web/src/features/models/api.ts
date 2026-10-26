@@ -10,6 +10,9 @@ export type ModelMetadata = {
   input_shape: (number | string | null)[] | null;
   stride: number | null;
   model_type: string | null;
+  model_series?: string | null;
+  series_source?: "checkpoint_yaml" | "onnx_metadata" | null;
+  ultralytics_version?: string | null;
   scale: string | null;
   parameters: number | null;
   producer: string | null;
@@ -30,6 +33,7 @@ export type ModelInspection = {
 };
 export type StoredModel = ModelVariant & {
   savedAt: string;
+  expiresAt: string | null;
   sizeBytes: number;
   sha256: string;
   location: string;
@@ -100,6 +104,7 @@ type ModelRecord = {
   id: string;
   variant: ModelVariant;
   saved_at: string;
+  expires_at: string | null;
   size_bytes: number;
   sha256: string;
   location: string;
@@ -109,6 +114,7 @@ function fromModel(item: ModelRecord): StoredModel {
     ...item.variant,
     id: item.id,
     savedAt: item.saved_at,
+    expiresAt: item.expires_at,
     sizeBytes: item.size_bytes,
     sha256: item.sha256,
     location: item.location,
@@ -144,7 +150,7 @@ export function uploadModel(
     if (data.task) body.set("task", data.task);
     const abort = () => xhr.abort();
     const cleanup = () => signal.removeEventListener("abort", abort);
-    xhr.open("POST", `${base}/upload`);
+    xhr.open("POST", `${base}/temporary`);
     xhr.timeout = 15 * 60 * 1000;
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable)
@@ -237,6 +243,16 @@ export async function configureModel(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ family, task }),
+    }),
+  );
+}
+
+export async function saveTemporaryModel(id: string, name: string) {
+  return fromModel(
+    await request<ModelRecord>(`/${encodeURIComponent(id)}/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
     }),
   );
 }

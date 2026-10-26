@@ -5,6 +5,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { StorageDetails } from "./storage-details";
 import { SourceDetails } from "@/features/sources/components/source-details";
 import { SavedSourceActions } from "@/features/sources/components/saved-source-actions";
 import type { VisionSource } from "@/features/sources/types";
@@ -21,6 +22,54 @@ export function SourceDetailSheet({
   error: string;
   onClose: () => void;
 }) {
+  const storage: [string, string][] = source
+    ? [
+        ["ID", source.id],
+        ["Tệp gốc", source.originalFilename ?? "Chưa ghi nhận"],
+        [
+          "Vị trí lưu",
+          ["image", "screen", "video"].includes(source.kind)
+            ? `sources/${source.location}`
+            : source.location,
+        ],
+        [
+          "Dung lượng chính xác",
+          source.size !== undefined
+            ? `${source.size.toLocaleString("vi-VN")} byte`
+            : "Chưa ghi nhận",
+        ],
+        ["MIME", source.mimeType ?? "Chưa ghi nhận"],
+        [
+          "Ngày lưu",
+          source.createdAt
+            ? new Date(source.createdAt).toLocaleString("vi-VN")
+            : "Chưa ghi nhận",
+        ],
+        [
+          "Cập nhật lần cuối",
+          source.updatedAt
+            ? new Date(source.updatedAt).toLocaleString("vi-VN")
+            : "Chưa ghi nhận",
+        ],
+        ...(source.previewLocation
+          ? [
+              ["Tệp preview", `sources/${source.previewLocation}`] as [
+                string,
+                string,
+              ],
+            ]
+          : []),
+        ...(source.previewSize !== undefined
+          ? [
+              [
+                "Dung lượng preview",
+                `${source.previewSize.toLocaleString("vi-VN")} byte`,
+              ] as [string, string],
+            ]
+          : []),
+        ["SHA-256 đầy đủ", source.sha256 ?? "Chưa ghi nhận"],
+      ]
+    : [];
   return (
     <Sheet
       open={Boolean(source)}
@@ -29,7 +78,7 @@ export function SourceDetailSheet({
       }}
     >
       <SheetContent
-        className="w-full overflow-y-auto sm:max-w-lg"
+        className="w-full overflow-y-auto data-[side=right]:w-full sm:max-w-lg"
         onEscapeKeyDown={(event) => {
           if (selection.saving) event.preventDefault();
         }}
@@ -45,7 +94,10 @@ export function SourceDetailSheet({
         </SheetHeader>
         {source && (
           <div className="space-y-6 px-4 pb-6 md:px-6 [&_aside]:border-0 [&_aside]:p-0">
-            <SourceDetails source={source} />
+            <div>
+              <SourceDetails source={source} />
+              <StorageDetails rows={storage} />
+            </div>
             <div className="border-t pt-4">
               <SavedSourceActions
                 key={source.id}

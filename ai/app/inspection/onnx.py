@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from app.contracts.model import ModelMetadata
+from app.inspection.identity import model_identity
 from app.inspection.normalize import class_names, image_size, literal
 
 
@@ -41,11 +42,19 @@ def inspect_onnx(path: Path) -> ModelMetadata:
             dim.dim_value if dim.HasField("dim_value") else dim.dim_param or None
             for dim in inputs[0].type.tensor_type.shape.dim
         ][:8]
+    series, declared_scale = model_identity(
+        values.get("model_series") or values.get("description"), family
+    )
+    scale = values.get("scale") or declared_scale
     names = class_names(values.get("names"))
     stride = literal(values.get("stride"))
     return ModelMetadata(
         format="onnx",
         family=family,
+        model_series=series,
+        series_source="onnx_metadata" if series else None,
+        scale=scale if scale in {"n", "s", "m", "l", "x"} else None,
+        ultralytics_version=values.get("version", "")[:100] or None if family else None,
         task=task,
         names=names,
         class_count=len(names) or None,

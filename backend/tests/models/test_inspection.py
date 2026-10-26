@@ -17,7 +17,7 @@ from app.main import create_app
 ORIGINAL_CLIENT = httpx.AsyncClient
 
 
-# ------------------------------ Kiểm thử cầu nối AI ---------------------------
+# ---------------------------- Kiểm thử cầu nối AI ----------------------------
 class ModelInspectionTests(unittest.TestCase):
     """Dùng AI HTTP giả lập để xác minh pipeline backend mà không cài torch trong backend."""
 

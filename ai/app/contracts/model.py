@@ -27,6 +27,9 @@ class ModelMetadata(BaseModel):
     input_shape: list[int | str | None] | None = None
     stride: int | None = None
     model_type: str | None = None
+    model_series: str | None = None
+    series_source: Literal["checkpoint_yaml", "onnx_metadata"] | None = None
+    ultralytics_version: str | None = None
     scale: str | None = None
     parameters: int | None = None
     producer: str | None = None

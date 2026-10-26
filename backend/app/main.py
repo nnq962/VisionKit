@@ -1,5 +1,6 @@
 """Entry point FastAPI quản lý dữ liệu VisionKit, độc lập với module AI."""
 
+import asyncio
 import logging
 import sqlite3
 from collections.abc import AsyncIterator
@@ -15,6 +16,8 @@ from app.core.errors import SourceError
 from app.db import initialize_database
 from app.modules.models.repository import ModelRepository
 from app.modules.models.service import ModelService
+from app.modules.runs.repository import RunRepository
+from app.modules.runs.service import RunService
 from app.modules.sources.repository import SourceRepository
 from app.modules.sources.service import SourceService
 from app.storage.local import LocalStorage
@@ -41,9 +44,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             SourceRepository(database), LocalStorage(config)
         )
         application.state.models = ModelService(ModelRepository(database), config)
+        await application.state.models.cleanup_temporary()
+        application.state.models.cleanup_task = asyncio.create_task(
+            application.state.models.maintain_temporary()
+        )
+        application.state.runs = RunService(
+            RunRepository(database), application.state.models, config
+        )
+        application.state.runs.cleanup_task = asyncio.create_task(
+            application.state.runs.maintain()
+        )
         try:
             yield
         finally:
+            await application.state.runs.shutdown()
             await application.state.models.shutdown()
 
     application = FastAPI(title="VisionKit API", version="0.1.0", lifespan=lifespan)

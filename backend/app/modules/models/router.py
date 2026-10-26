@@ -9,7 +9,13 @@ from starlette.concurrency import run_in_threadpool
 from app.core.errors import SourceError
 
 from .catalog.ultralytics import CATALOG
-from .schemas import DownloadJob, DownloadRequest, ModelConfiguration, StoredModel
+from .schemas import (
+    DownloadJob,
+    DownloadRequest,
+    ModelConfiguration,
+    ModelSave,
+    StoredModel,
+)
 from .service import ModelService
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -54,6 +60,36 @@ async def upload_model(
         return service.inspector.start(model)
     finally:
         file.file.close()
+
+
+# ----------------------------- Upload model tạm ------------------------------
+@router.post("/temporary", response_model=StoredModel, status_code=201)
+async def upload_temporary(
+    service: Service,
+    file: Annotated[UploadFile, File()],
+    name: Annotated[str | None, Form()] = None,
+) -> StoredModel:
+    """Lưu file tạm 24 giờ và tự đọc metadata; chưa thêm vào danh sách thư viện.
+
+    Trả model ID dùng chung cho inspect/pipeline/save. Dùng giới hạn upload
+    và rollback như upload thường; luôn đóng multipart sau khi lưu file.
+    """
+    try:
+        model = await run_in_threadpool(
+            service.upload, file.file, file.filename or "", name, None, None, True
+        )
+        return service.inspector.start(model)
+    finally:
+        file.file.close()
+
+
+# ------------------------------- Lưu model tạm -------------------------------
+@router.post("/{model_id}/save", response_model=StoredModel)
+async def save_temporary(
+    model_id: str, body: ModelSave, service: Service
+) -> StoredModel:
+    """Chuyển model tạm còn hiệu lực vào thư viện; không upload/load lại file hoặc mất metadata."""
+    return await service.promote(model_id, body.name)
 
 
 # ------------------------------- Tạo lượt tải --------------------------------

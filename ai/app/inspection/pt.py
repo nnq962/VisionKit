@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from app.contracts.model import ModelMetadata
+from app.inspection.identity import model_identity
 from app.inspection.normalize import class_names, image_size
 
 
@@ -68,7 +69,8 @@ def inspect_pt(path: Path) -> ModelMetadata:
     parameters = (
         sum(parameter.numel() for parameter in model.parameters()) if family else None
     )
-    scale = config.get("scale")
+    series, declared_scale = model_identity(config.get("yaml_file"), family)
+    scale = config.get("scale") or declared_scale
     return ModelMetadata(
         format="pt",
         family=family,
@@ -78,6 +80,11 @@ def inspect_pt(path: Path) -> ModelMetadata:
         imgsz=image_size(arguments.get("imgsz")),
         stride=stride,
         model_type=model_type,
+        model_series=series,
+        series_source="checkpoint_yaml" if series else None,
+        ultralytics_version=str(checkpoint["version"])[:100]
+        if checkpoint.get("version")
+        else None,
         scale=scale if scale in {"n", "s", "m", "l", "x"} else None,
         parameters=parameters,
         producer="Ultralytics" if family else None,

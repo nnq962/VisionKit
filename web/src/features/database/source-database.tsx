@@ -8,7 +8,7 @@ import {
   RefreshCwIcon,
   SearchIcon,
 } from "lucide-react";
-import { WorkspacePage, WorkspaceSection } from "@/components/workspace-page";
+import { WorkspaceSection } from "@/components/workspace-page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,7 +45,7 @@ export function SourceDatabase() {
   }
 
   return (
-    <WorkspacePage title="Database" description="Quản lý source đã lưu.">
+    <>
       {uploadOpen && (
         <SourceUploadPanel
           selection={selection}
@@ -198,6 +198,6 @@ export function SourceDatabase() {
           },
         }}
       />
-    </WorkspacePage>
+    </>
   );
 }

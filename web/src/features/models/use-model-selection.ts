@@ -9,6 +9,8 @@ import {
   inspectModel,
   configureModel,
   uploadModel,
+  saveTemporaryModel,
+  deleteModel,
   type StoredModel,
 } from "./api";
 import {
@@ -22,6 +24,9 @@ export function useModelSelectionState() {
   const [draft, setDraft] = useState<ModelDraft>(emptyModelDraft);
   const [draftsReady, setDraftsReady] = useState(false);
   const [draftStored, setDraftStored] = useState(false);
+  const [temporary, setTemporary] = useState<StoredModel | null>(null);
+  const [saving, setSaving] = useState(false);
+  const attemptedFile = useRef<File | null>(null);
   const [library, setLibrary] = useState<StoredModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [libraryError, setLibraryError] = useState("");
@@ -52,8 +57,9 @@ export function useModelSelectionState() {
           ["yolo", "yoloe"].includes(saved.family) &&
           ["detect", "segment", "classify", "pose", "obb"].includes(saved.task)
         ) {
-          current.current = saved;
-          setDraft(saved);
+          const restored = { ...emptyModelDraft, ...saved };
+          current.current = restored;
+          setDraft(restored);
         }
       })
       .catch(() => {
@@ -137,10 +143,46 @@ export function useModelSelectionState() {
     };
   }, []);
 
-  const selected = library.find((item) => item.id === draft.selectedId) ?? null;
+  function replaceModel(model: StoredModel) {
+    if (current.current.temporaryId === model.id) setTemporary(model);
+    setLibrary((items) =>
+      items.map((item) => (item.id === model.id ? model : item)),
+    );
+  }
+
+  useEffect(() => {
+    if (!draftsReady || !draft.temporaryId) return;
+    const controller = new AbortController();
+    getModel(draft.temporaryId, controller.signal)
+      .then((model) => {
+        if (!controller.signal.aborted) setTemporary(model);
+      })
+      .catch((reason) => {
+        if (!controller.signal.aborted) setError((reason as Error).message);
+      });
+    return () => controller.abort();
+  }, [draftsReady, draft.temporaryId]);
+
+  useEffect(() => {
+    if (
+      !draftsReady ||
+      !draft.file ||
+      draft.temporaryId ||
+      attemptedFile.current === draft.file
+    )
+      return;
+    attemptedFile.current = draft.file;
+    void stage();
+    // A restored draft uploads once; explicit retry handles failures.
+  }, [draftsReady, draft.file, draft.temporaryId]);
+
+  const selected =
+    draft.mode === "upload"
+      ? temporary
+      : (library.find((item) => item.id === draft.selectedId) ?? null);
   const inspectionStatus = selected?.inspection.status;
   useEffect(() => {
-    const id = draft.selectedId;
+    const id = selected?.id;
     if (
       !id ||
       !inspectionStatus ||
@@ -156,9 +198,7 @@ export function useModelSelectionState() {
             ? await inspectModel(id!, controller.signal)
             : await getModel(id!, controller.signal);
         if (controller.signal.aborted) return;
-        setLibrary((items) =>
-          items.map((item) => (item.id === model.id ? model : item)),
-        );
+        replaceModel(model);
       } catch (reason) {
         if (!controller.signal.aborted) setError((reason as Error).message);
       }
@@ -170,20 +210,20 @@ export function useModelSelectionState() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [draft.selectedId, inspectionStatus]);
+  }, [selected?.id, inspectionStatus]);
 
   async function retryInspection() {
-    const id = current.current.selectedId;
+    const id =
+      current.current.mode === "upload"
+        ? current.current.temporaryId
+        : current.current.selectedId;
     if (!id || metadataBusy.current) return;
     metadataBusy.current = true;
     setInspecting(true);
     setError("");
     try {
       const model = await inspectModel(id);
-      if (mounted.current)
-        setLibrary((items) =>
-          items.map((item) => (item.id === id ? model : item)),
-        );
+      if (mounted.current) replaceModel(model);
     } catch (reason) {
       if (mounted.current) setError((reason as Error).message);
     } finally {
@@ -195,17 +235,17 @@ export function useModelSelectionState() {
     family: "yolo" | "yoloe",
     task: ModelTask,
   ): Promise<boolean> {
-    const id = current.current.selectedId;
+    const id =
+      current.current.mode === "upload"
+        ? current.current.temporaryId
+        : current.current.selectedId;
     if (!id || metadataBusy.current) return false;
     metadataBusy.current = true;
     setInspecting(true);
     setError("");
     try {
       const model = await configureModel(id, family, task);
-      if (mounted.current)
-        setLibrary((items) =>
-          items.map((item) => (item.id === id ? model : item)),
-        );
+      if (mounted.current) replaceModel(model);
       return true;
     } catch (reason) {
       if (mounted.current) setError((reason as Error).message);
@@ -243,14 +283,17 @@ export function useModelSelectionState() {
       );
       return;
     }
+    const previous = current.current.temporaryId;
+    setTemporary(null);
+    if (previous) void deleteModel(previous).catch(() => {});
     update({
       file,
-      selectedId: null,
-      name: file.name.replace(/\.(pt|onnx)$/i, "").slice(0, 120),
+      temporaryId: null,
+      name: (file.name.replace(/\.(pt|onnx)$/i, "") || file.name).slice(0, 120),
     });
     setProgress(0);
   }
-  async function save() {
+  async function stage() {
     const value = current.current;
     if (upload.current || !value.file || !value.name.trim()) return;
     const controller = new AbortController();
@@ -270,21 +313,11 @@ export function useModelSelectionState() {
         },
       );
       if (!mounted.current) return;
-      const next = {
-        ...current.current,
-        file: null,
-        name: "",
-        mode: "saved" as const,
-        selectedId: saved.id,
-      };
+      const next = { ...current.current, temporaryId: saved.id };
       current.current = next;
       setDraft(next);
       setDraftStored(false);
-      setLibrary((items) => [
-        saved,
-        ...items.filter((item) => item.id !== saved.id),
-      ]);
-      window.dispatchEvent(new Event("visionkit:models-changed"));
+      setTemporary(saved);
     } catch (reason) {
       if (mounted.current)
         setError(
@@ -297,9 +330,51 @@ export function useModelSelectionState() {
       if (mounted.current) setUploading(false);
     }
   }
+  async function save() {
+    const value = current.current;
+    if (
+      !value.temporaryId ||
+      saving ||
+      metadataBusy.current ||
+      !value.name.trim()
+    )
+      return;
+    setSaving(true);
+    setError("");
+    try {
+      const saved = await saveTemporaryModel(
+        value.temporaryId,
+        value.name.trim(),
+      );
+      if (!mounted.current) return;
+      const next = {
+        ...current.current,
+        file: null,
+        name: "",
+        mode: "saved" as const,
+        selectedId: saved.id,
+        temporaryId: null,
+      };
+      current.current = next;
+      setDraft(next);
+      setTemporary(null);
+      setLibrary((items) => [
+        saved,
+        ...items.filter((item) => item.id !== saved.id),
+      ]);
+      window.dispatchEvent(new Event("visionkit:models-changed"));
+    } catch (reason) {
+      if (mounted.current) setError((reason as Error).message);
+    } finally {
+      if (mounted.current) setSaving(false);
+    }
+  }
   async function validate(): Promise<StoredModel | null> {
     if (checking.current) return null;
-    const id = current.current.selectedId;
+    const id =
+      current.current.mode === "upload"
+        ? current.current.temporaryId
+        : current.current.selectedId;
     if (!id) {
       setError("Chọn một model trong thư viện.");
       return null;
@@ -311,17 +386,15 @@ export function useModelSelectionState() {
       const model = await getModel(id);
       if (!["ready", "manual"].includes(model.inspection.status)) {
         if (mounted.current) {
-          setLibrary((items) =>
-            items.map((item) => (item.id === id ? model : item)),
-          );
+          replaceModel(model);
           setError(
             "Đọc metadata hoặc bổ sung thông tin model trước khi tiếp tục.",
           );
         }
         return null;
       }
-      if (!mounted.current || current.current.selectedId !== id) return null;
-      setLibrary((items) => [model, ...items.filter((item) => item.id !== id)]);
+      if (!mounted.current) return null;
+      replaceModel(model);
       return model;
     } catch (reason) {
       if (mounted.current) {
@@ -343,6 +416,8 @@ export function useModelSelectionState() {
     draftError,
     draftsReady,
     uploading,
+    saving,
+    stage,
     progress,
     validating,
     maxBytes,
@@ -359,7 +434,10 @@ export function useModelSelectionState() {
       upload.current?.abort();
     },
     discard() {
-      update({ file: null, name: "" });
+      const id = current.current.temporaryId;
+      setTemporary(null);
+      update({ file: null, name: "", temporaryId: null });
+      if (id) void deleteModel(id).catch(() => {});
       setProgress(0);
     },
   };

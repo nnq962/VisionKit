@@ -30,7 +30,7 @@ class ForbiddenPayload:
         )
 
 
-# ------------------------------ Tạo ONNX kiểm thử -----------------------------
+# ----------------------------- Tạo ONNX kiểm thử -----------------------------
 def make_onnx(path: Path, with_metadata: bool = True) -> None:
     """Ghi graph Identity với shape và metadata mẫu; không cần ONNX Runtime hoặc tải mạng."""
     graph = helper.make_graph(
@@ -93,6 +93,10 @@ class InspectionTests(unittest.IsolatedAsyncioTestCase):
         result = await self.inspect(self.pt)
         self.assertEqual(result.status, "ready", result)
         self.assertEqual(result.metadata.family, "yolo")
+        self.assertEqual(result.metadata.model_series, "YOLO11")
+        self.assertEqual(result.metadata.series_source, "checkpoint_yaml")
+        self.assertEqual(result.metadata.scale, "n")
+        self.assertEqual(result.metadata.ultralytics_version, "fixture")
         self.assertEqual(result.metadata.task, "detect")
         self.assertEqual(result.metadata.class_count, 2)
         self.assertEqual(result.metadata.names["1"], "car")
@@ -105,6 +109,9 @@ class InspectionTests(unittest.IsolatedAsyncioTestCase):
         make_onnx(path)
         result = await self.inspect(path)
         self.assertEqual(result.status, "ready")
+        self.assertEqual(result.metadata.model_series, "YOLO11")
+        self.assertEqual(result.metadata.series_source, "onnx_metadata")
+        self.assertEqual(result.metadata.scale, "n")
         self.assertEqual(result.metadata.input_shape, [1, 3, 640, 640])
         self.assertEqual(result.metadata.names, {"0": "person", "1": "car"})
 
@@ -114,6 +121,8 @@ class InspectionTests(unittest.IsolatedAsyncioTestCase):
         make_onnx(path, False)
         result = await self.inspect(path)
         self.assertEqual(result.status, "needs_input")
+        self.assertIsNone(result.metadata.model_series)
+        self.assertIsNone(result.metadata.scale)
         self.assertIsNone(result.metadata.family)
         self.assertIsNone(result.metadata.task)
         self.assertEqual(result.metadata.input_shape, [1, 3, 640, 640])

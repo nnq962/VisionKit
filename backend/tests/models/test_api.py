@@ -20,7 +20,7 @@ PAYLOAD = b"model-test-data" * 50000
 ORIGINAL_CLIENT = httpx.AsyncClient
 
 
-# --------------------------- Luồng dữ liệu kiểm thử ---------------------------
+# -------------------------- Luồng dữ liệu kiểm thử ---------------------------
 class SlowStream(httpx.AsyncByteStream):
     """Phát chunks có độ trễ để kiểm tra tiến độ và huỷ trước khi tải hoàn tất."""
 

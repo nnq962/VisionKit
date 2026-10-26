@@ -32,7 +32,7 @@ src/
 
 Add workspace routes under `src/app/(workspace)/` to reuse the sidebar. Keep feature-specific components under `src/features/<feature>/` and add navigation entries in `src/lib/navigation.ts`.
 
-The Database route is a placeholder. The YOLO source picker is integrated with the backend for persistent image/screenshot storage. Model configuration and inference are not connected.
+Database manages the saved source library. The YOLO picker connects source and model storage to the backend; model metadata is extracted by the separate AI service. Image and video-file inference are connected to the separate AI service.
 
 ## Checks
 
@@ -45,7 +45,7 @@ npm run build
 
 Run the backend on port 8000 before using the persistent library. Next.js proxies `/api/v1/*` to `http://127.0.0.1:8000`; set `VISIONKIT_API_URL` in the web server environment to use another backend address. Restart Next.js after changing its configuration/environment.
 
-Images and one-shot screen captures preview locally first. Selecting “Lưu source để tái sử dụng” uploads the actual file and persists metadata; the saved library survives page reloads. It supports previews, rename, confirmed deletion and loading additional pages. Search filters currently loaded entries. Video, webcam and remote sources remain local configuration/preview features; their persistent upload and inference are not enabled yet.
+Images and one-shot screen captures preview locally first. Selecting “Lưu source để tái sử dụng” uploads the actual file and persists metadata; the saved library survives page reloads. It supports previews, rename, confirmed deletion and loading additional pages. Search filters currently loaded entries. Video files also support persistent upload and inference. Webcam and remote-source inference remain future integrations.
 
 `src/features/sources/api.ts` owns the HTTP contract. The reusable source module handles metadata, browser capture and library state; the four YOLO step components remain separate. The UI reports API errors and retries without falling back to sample data.
 
@@ -63,4 +63,40 @@ Draft files and metadata are saved locally in IndexedDB (`visionkit-source-draft
 
 ## Pipeline model selection
 
-The YOLO model step uses the real `/api/v1/models` library, or uploads custom `.pt`/`.onnx` weights with family/task metadata via `/api/v1/models/upload`. It selects saved model IDs, validates file availability before advancing, and displays browser upload progress. Reusable components and the selection provider live in `features/models/`; `steps/model-step.tsx` only composes them. IndexedDB retains model selection and unsaved upload drafts across routes and reloads. Runtime compatibility remains the responsibility of the AI module.
+The YOLO model step uses the real `/api/v1/models` library, or uploads custom `.pt`/`.onnx` weights via `/api/v1/models/upload`. It selects saved model IDs, validates file availability before advancing, and displays browser upload progress. Reusable components and the selection provider live in `features/models/`; `steps/model-step.tsx` only composes them. IndexedDB retains model selection and unsaved upload drafts across routes and reloads. Runtime compatibility remains the responsibility of the AI module.
+
+Run the AI service on port 8001 alongside backend 8000. Selecting a file automatically uploads it to temporary storage and polls metadata extraction; no save click is required. **Lưu vào thư viện** promotes the same file without uploading it again. The pipeline can advance with a temporary model after metadata is ready/manual. Temporary models are hidden from the saved library, survive reload via their IndexedDB ID, and expire after 24 hours of inactivity. Details show inferred family/task, class names/count, image size, input shape and available architecture information. Missing metadata allows manual configuration; AI downtime preserves the uploaded model with a retry action. Existing uninspected models are inspected on selection. The next step requires `ready` or explicit manual configuration; extracted metadata does not validate inference execution.
+
+## Database models
+
+`/database` switches between Source and Model libraries. The Model view reads the same saved `/api/v1/models` records as Model Hub, excluding temporary uploads. It supports client-side search, PT/ONNX filters, progressive display, storage totals and a details sheet with metadata, ID, relative storage file, exact bytes, save time and full SHA-256. Metadata can be re-read or supplemented through the existing model APIs, independently of the current pipeline selection. The catalog refreshes every four seconds and on focus/model changes. Components and data state live under `features/database/`; the route only composes the workspace.
+
+Source and model detail sheets share `StorageDetails`. Saved sources expose original filename, relative storage location, exact bytes, MIME, created/updated timestamps, optional preview file/size and SHA-256. New image/screen/video uploads compute SHA-256 while streaming; older records without it display “Chưa ghi nhận”.
+
+## YOLO parameter setup
+
+The Parameters step composes inference controls, a searchable metadata-driven class filter, collapsible advanced settings and a source/model context panel. Confidence/IoU, input dimensions, requested device, maximum detections, class-agnostic NMS and temporal frame stride are represented as configuration. Classification hides bbox/NMS/class-filter controls. Static NCHW ONNX spatial dimensions lock the input size (including rectangular inputs); other size options follow the model stride. Runtime hardware support is still unverified until inference integration.
+
+`parameters.ts` owns defaults/constraints and labels, `use-pipeline-parameters.ts` persists configuration per model ID in browser localStorage with an in-memory fallback, and `components/parameters/` holds class filtering and context. The Run step reviews the same values; execution is connected to the inference API for images and video files. Stored parameters are a browser draft, not a saved backend pipeline.
+
+## Reusable vision overlay
+
+`features/vision-overlay` provides `useDetectionOverlay` and `DetectionMedia` for bbox/keypoint canvas overlays on images or videos. It handles contain/cover/fill geometry, optional mirroring, normalized or original-pixel coordinates, Retina scaling, resize, labels, configurable skeletons and optional stale-result clearing for live feeds. The Run step feeds real inference results into this overlay; no sample detections are added to product routes. See `src/features/vision-overlay/README.md` for the coordinate contract and examples. Run `npm run test:overlay` on Node >=22.18 for geometry tests.
+
+## Real image inference
+
+The Run step now starts real image/screenshot/video-file inference through `features/inference/`. It uploads unsaved original files or references saved sources, requests the selected stored/temporary model and numeric parameters, then subscribes to run WebSocket events with a GET polling fallback. Results feed the reusable canvas overlay, a detection/classification list and JSON download. The user can stop/retry and toggle annotation visibility. The latest run ID for the same source/model/options is remembered in sessionStorage for tab-local reload/navigation recovery; snapshots expire after 24 hours. A changed configuration requires a new run. Webcam/RTSP sources remain visibly disabled until their inference adapters are implemented.
+
+Run both backend 8000 and AI 8001; install AI dependencies with `cd ai && uv sync`. Actual device availability is validated in AI. ONNX runs on CPU in this MVP. Segmentation/OBB polygons are in downloaded JSON while preview shows bbox; pose keypoints display without guessing a custom skeleton. No inference output is mocked in product routes.
+
+## Video inference preview
+
+The shared `RunWorkspace` / `useInferenceRun` supports uploaded or saved video files alongside images. The request passes the configured `vid_stride`; real WebSocket snapshots update a latest-frame canvas, progress bar, processed count and FPS. Playback starts with the first AI result, muted, without seek controls. On an active-run reload it initially positions near the current AI timestamp; it does not keep a result timeline or continuously synchronize clocks. Stopping inference pauses playback. Terminal results can be inspected near their final AI timestamp. JSON download contains the last frame and summary only, not all video detections.
+
+Browsers must support the original codec (MP4/H.264 is practical); no transcoding is done. Bbox/keypoint output can lag or lead playback, especially on slow hardware. Frames with no objects clear prior annotations, stale active overlays expire, and overlays are hidden after playback ends while AI is still working. Source video itself is never sent frame-by-frame from AI to the browser. Canvas and video playback remain separate.
+
+## Run overlay controls
+
+The result sidebar now contains independent Bounding box, class/confidence label, keypoint-dot and skeleton toggles instead of a continuously changing object list. Preferences persist locally across runs/reload and apply to the canvas only; toggling never re-runs inference or seeks video. Classifier output retains its top prediction as a compact summary.
+
+Pose previews default to the COCO 17-keypoint skeleton preset; a detected non-17 schema disables this preset rather than guessing connections. Points and connecting edges can be shown independently (e.g. skeleton-only with bbox hidden). Empty COCO pose frames keep the configured controls stable and clear the canvas as usual. Other skeleton layouts can be passed through the reusable overlay hook when their schema is configured. The existing confidence/visibility checks also suppress edges whose endpoints are missing or low-confidence.

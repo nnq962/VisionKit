@@ -24,60 +24,20 @@ const labels = {
   unavailable: "AI chưa kết nối",
   manual: "Đã khai báo thủ công",
 };
-export function ModelMetadataPanel({
+export function ModelMetadataStatus({
   model,
   selection,
 }: {
   model: StoredModel;
-  selection: ModelSelection;
+  selection: Pick<
+    ModelSelection,
+    "inspecting" | "retryInspection" | "configure"
+  >;
 }) {
   const inspection = model.inspection;
-  const metadata = inspection.metadata;
   const active = ["queued", "processing"].includes(inspection.status);
-  const [showAll, setShowAll] = useState(false);
-  const [manual, setManual] = useState(false);
-  const [family, setFamily] = useState<"yolo" | "yoloe">(
-    model.familyId.startsWith("yoloe") ? "yoloe" : "yolo",
-  );
-  const [task, setTask] = useState<ModelTask>(model.task ?? "detect");
-  const names = Object.values(metadata?.names ?? {});
-  const canConfigure = [
-    "uninspected",
-    "needs_input",
-    "unavailable",
-    "manual",
-  ].includes(inspection.status);
-  const rows = metadata
-    ? [
-        ...(metadata.class_count !== null
-          ? [["Số class", String(metadata.class_count)]]
-          : []),
-        ...(metadata.imgsz
-          ? [["Kích thước ảnh", metadata.imgsz.join(" × ")]]
-          : []),
-        ...(metadata.input_shape
-          ? [
-              [
-                "Input shape",
-                metadata.input_shape
-                  .map((item) => item ?? "dynamic")
-                  .join(" × "),
-              ],
-            ]
-          : []),
-        ...(metadata.stride ? [["Stride", String(metadata.stride)]] : []),
-        ...(metadata.model_type ? [["Kiến trúc", metadata.model_type]] : []),
-        ...(metadata.parameters
-          ? [["Tham số", `${(metadata.parameters / 1e6).toFixed(2)} M`]]
-          : []),
-        ...(metadata.version ? [["Phiên bản", metadata.version]] : []),
-      ]
-    : [];
   return (
-    <section
-      className="space-y-4 border-t pt-6"
-      aria-label="Metadata tự nhận diện"
-    >
+    <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p
           role="status"
@@ -105,13 +65,70 @@ export function ModelMetadataPanel({
           {inspection.message}
         </p>
       )}
+    </div>
+  );
+}
+
+export function ModelMetadataPanel({
+  model,
+  selection,
+}: {
+  model: StoredModel;
+  selection: Pick<
+    ModelSelection,
+    "inspecting" | "retryInspection" | "configure"
+  >;
+}) {
+  const inspection = model.inspection;
+  const metadata = inspection.metadata;
+  const [showAll, setShowAll] = useState(false);
+  const [manual, setManual] = useState(false);
+  const [family, setFamily] = useState<"yolo" | "yoloe">(
+    model.familyId.startsWith("yoloe") ? "yoloe" : "yolo",
+  );
+  const [task, setTask] = useState<ModelTask>(model.task ?? "detect");
+  const names = Object.values(metadata?.names ?? {});
+  const canConfigure = [
+    "uninspected",
+    "needs_input",
+    "unavailable",
+    "manual",
+  ].includes(inspection.status);
+  const ultralyticsVersion =
+    metadata?.ultralytics_version ??
+    (metadata?.format === "pt" ? metadata.version : null);
+  const rows = metadata
+    ? [
+        ...(metadata.class_count !== null
+          ? [["Số class", String(metadata.class_count)]]
+          : []),
+        ...(metadata.imgsz
+          ? [["Kích thước ảnh", metadata.imgsz.join(" × ")]]
+          : []),
+        ...(metadata.input_shape
+          ? [
+              [
+                "Input shape",
+                metadata.input_shape
+                  .map((item) => item ?? "dynamic")
+                  .join(" × "),
+              ],
+            ]
+          : []),
+        ...(metadata.stride ? [["Stride", String(metadata.stride)]] : []),
+        ...(metadata.model_type ? [["Kiến trúc", metadata.model_type]] : []),
+        ...(metadata.parameters
+          ? [["Tham số", `${(metadata.parameters / 1e6).toFixed(2)} M`]]
+          : []),
+        ...(ultralyticsVersion ? [["Ultralytics", ultralyticsVersion]] : []),
+      ]
+    : [];
+  return (
+    <section className="space-y-4" aria-label="Metadata tự nhận diện">
       {rows.length > 0 && (
-        <dl className="divide-y text-sm">
+        <dl className="divide-y border-t text-sm">
           {rows.map(([label, value]) => (
-            <div
-              key={label}
-              className="flex justify-between gap-4 py-3 first:pt-0"
-            >
+            <div key={label} className="flex justify-between gap-4 py-3">
               <dt className="shrink-0 text-muted-foreground">{label}</dt>
               <dd className="min-w-0 break-all text-right font-medium">
                 {value}

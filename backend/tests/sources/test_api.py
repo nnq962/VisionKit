@@ -1,5 +1,6 @@
 """Kiểm tra API ảnh với database và storage tạm, không chạm dữ liệu thật."""
 
+import hashlib
 import tempfile
 import unittest
 from contextlib import ExitStack
@@ -56,6 +57,9 @@ class SourceApiTests(unittest.TestCase):
         self.assertEqual(source["metadata"]["width"], 64)
         self.assertEqual(source["metadata"]["height"], 32)
         self.assertEqual(source["metadata"]["size"], len(image_bytes()))
+        self.assertEqual(
+            source["metadata"]["sha256"], hashlib.sha256(image_bytes()).hexdigest()
+        )
         path = self.settings.sources_path / source["location"]
         self.assertTrue(path.is_file())
         content = self.client.get(source["content_url"])

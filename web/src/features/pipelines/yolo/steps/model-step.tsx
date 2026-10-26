@@ -27,7 +27,9 @@ export function ModelStep({ selection }: { selection: ModelSelection }) {
         <Button
           variant={selection.mode === "saved" ? "secondary" : "ghost"}
           aria-pressed={selection.mode === "saved"}
-          disabled={selection.uploading || selection.validating}
+          disabled={
+            selection.uploading || selection.saving || selection.validating
+          }
           onClick={() => selection.update({ mode: "saved" })}
         >
           <BookmarkIcon />
@@ -36,7 +38,9 @@ export function ModelStep({ selection }: { selection: ModelSelection }) {
         <Button
           variant={selection.mode === "upload" ? "secondary" : "ghost"}
           aria-pressed={selection.mode === "upload"}
-          disabled={selection.uploading || selection.validating}
+          disabled={
+            selection.uploading || selection.saving || selection.validating
+          }
           onClick={() => selection.update({ mode: "upload" })}
         >
           <UploadIcon />

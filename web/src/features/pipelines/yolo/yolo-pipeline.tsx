@@ -10,7 +10,7 @@ import { SourceStep } from "./steps/source-step";
 import { ModelStep } from "./steps/model-step";
 import { ParametersStep } from "./steps/parameters-step";
 import { RunStep } from "./steps/run-step";
-import { defaultParameters } from "./types";
+import { usePipelineParameters } from "./use-pipeline-parameters";
 import { validateStep } from "./validation";
 
 const steps = ["Chọn source", "Chọn model", "Thông số", "Chạy"];
@@ -20,14 +20,16 @@ export function YoloPipeline() {
   const selection = useSourceSelection();
   const modelSelection = useModelSelection();
   const model = modelSelection.selected;
-  const [parameters, setParameters] = useState(defaultParameters);
+  const {
+    parameters,
+    update: setParameters,
+    storageError,
+  } = usePipelineParameters(model);
   const [error, setError] = useState("");
   const [errorSourceId, setErrorSourceId] = useState<string | null>(null);
 
   async function next() {
     let message = validateStep(step, selection.source, model, parameters);
-    if (step === 1 && modelSelection.mode === "upload")
-      message = "Lưu và chọn model trước khi tiếp tục.";
     if (step === 0 && !message && selection.saveEnabled) {
       if (!selection.saveName.trim()) message = "Đặt tên source trước khi lưu.";
       else if (!(await selection.save())) return;
@@ -73,6 +75,7 @@ export function YoloPipeline() {
                 step === 0 ||
                 selection.saving ||
                 modelSelection.uploading ||
+                modelSelection.saving ||
                 modelSelection.validating
               }
               onClick={() => {
@@ -89,6 +92,7 @@ export function YoloPipeline() {
                 disabled={
                   selection.saving ||
                   modelSelection.uploading ||
+                  modelSelection.saving ||
                   modelSelection.validating ||
                   (step === 1 &&
                     ["queued", "processing"].includes(
@@ -108,13 +112,25 @@ export function YoloPipeline() {
         {step === 0 && <SourceStep selection={selection} />}
         {step === 1 && <ModelStep selection={modelSelection} />}
         {step === 2 && (
-          <ParametersStep parameters={parameters} onChange={setParameters} />
+          <ParametersStep
+            parameters={parameters}
+            onChange={(value) => {
+              setParameters(value);
+              setError("");
+            }}
+            source={selection.source}
+            model={model}
+            storageError={storageError}
+          />
         )}
         {step === 3 && (
           <RunStep
             source={selection.source?.name ?? ""}
             model={model?.name ?? model?.filename ?? ""}
             parameters={parameters}
+            sourceKind={selection.source?.kind}
+            modelRecord={model}
+            sourceRecord={selection.source}
           />
         )}
         {error &&

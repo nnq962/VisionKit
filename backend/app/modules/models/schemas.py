@@ -62,6 +62,9 @@ class InspectionMetadata(BaseModel):
     input_shape: list[int | str | None] | None = None
     stride: int | None = None
     model_type: str | None = None
+    model_series: str | None = None
+    series_source: Literal["checkpoint_yaml", "onnx_metadata"] | None = None
+    ultralytics_version: str | None = None
     scale: str | None = None
     parameters: int | None = None
     producer: str | None = None
@@ -107,6 +110,7 @@ class StoredModel(BaseModel):
     sha256: str
     saved_at: str
     inspection: ModelInspection = Field(default_factory=ModelInspection)
+    expires_at: str | None = None
 
 
 # ------------------------------ Trạng thái tải -------------------------------
@@ -129,3 +133,11 @@ class DownloadJob(BaseModel):
         if self.status == "completed":
             return 100
         return min(99, self.downloaded_bytes * 100 // max(1, self.total_bytes))
+
+
+# ------------------------------ Lưu vào thư viện -----------------------------
+class ModelSave(BaseModel):
+    """Nhận tên hiển thị khi chuyển model tạm thành model thư viện, giữ nguyên file và ID."""
+
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=120)

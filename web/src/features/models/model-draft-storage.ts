@@ -3,6 +3,7 @@ import type { ModelTask } from "./catalog";
 export type ModelDraft = {
   mode: "saved" | "upload";
   selectedId: string | null;
+  temporaryId: string | null;
   file: File | null;
   name: string;
   family: "yolo" | "yoloe";
@@ -11,6 +12,7 @@ export type ModelDraft = {
 export const emptyModelDraft: ModelDraft = {
   mode: "saved",
   selectedId: null,
+  temporaryId: null,
   file: null,
   name: "",
   family: "yolo",

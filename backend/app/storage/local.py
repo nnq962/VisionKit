@@ -1,5 +1,6 @@
 """Lưu ảnh gốc và preview bằng tên do backend tạo, tách khỏi SQLite."""
 
+import hashlib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -37,14 +38,14 @@ class LocalStorage:
     @contextmanager
     def temporary_upload(
         self, stream: BinaryIO, limit: int | None = None
-    ) -> Iterator[tuple[Path, int]]:
+    ) -> Iterator[tuple[Path, int, str]]:
         """Ghi upload theo khối vào file tạm và luôn dọn sau khi thoát context.
 
         Tham số:
             stream: File nhị phân được đọc lại từ đầu, không tự đóng tại đây.
             limit: Giới hạn byte riêng; mặc định dùng giới hạn ảnh.
         Trả về:
-            Context manager cung cấp đường dẫn tạm và dung lượng đã ghi.
+            Context manager cung cấp đường dẫn tạm, dung lượng và SHA-256 của byte gốc.
         Ngoại lệ:
             SourceError: 413 khi quá giới hạn dung lượng.
             OSError: Không ghi/đọc/xoá được file tạm.
@@ -53,6 +54,7 @@ class LocalStorage:
         temporary = self.root / f"{uuid4().hex}.part"
         try:
             size = 0
+            digest = hashlib.sha256()
             stream.seek(0)
             with temporary.open("xb") as output:
                 while chunk := stream.read(1024 * 1024):
@@ -63,7 +65,8 @@ class LocalStorage:
                             f"Tệp vượt giới hạn upload {limit // (1024 * 1024)} MB.",
                         )
                     output.write(chunk)
-            yield temporary, size
+                    digest.update(chunk)
+            yield temporary, size, digest.hexdigest()
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -73,7 +76,7 @@ class LocalStorage:
         Không tạo bản ghi SQLite hoặc giữ file lâu dài. Trả metadata và JPEG
         bytes; lỗi ảnh/giới hạn dung lượng được chuyển thành SourceError.
         """
-        with self.temporary_upload(stream) as (temporary, size):
+        with self.temporary_upload(stream) as (temporary, size, digest):
             metadata, preview = inspect_image(
                 temporary, self.settings.max_image_pixels, make_preview=True
             )
@@ -96,7 +99,7 @@ class LocalStorage:
         """
         created: list[Path] = []
         try:
-            with self.temporary_upload(stream) as (temporary, size):
+            with self.temporary_upload(stream) as (temporary, size, digest):
                 metadata, preview = inspect_image(
                     temporary, self.settings.max_image_pixels
                 )
@@ -107,6 +110,7 @@ class LocalStorage:
                     created.append(preview_path)
                     preview_path.write_bytes(preview)
                     metadata.update(
+                        preview_size=len(preview),
                         preview_location=preview_location,
                         preview_mime_type="image/jpeg",
                     )
@@ -114,7 +118,9 @@ class LocalStorage:
                 temporary.replace(original_path)
                 created.append(original_path)
                 metadata.update(
-                    size=size, original_filename=Path(filename.replace("\\", "/")).name
+                    size=size,
+                    sha256=digest,
+                    original_filename=Path(filename.replace("\\", "/")).name,
                 )
                 return location, metadata
         except Exception:
@@ -138,7 +144,7 @@ class LocalStorage:
         try:
             with self.temporary_upload(
                 stream, self.settings.max_video_upload_bytes
-            ) as (temporary, size):
+            ) as (temporary, size, digest):
                 metadata, preview = inspect_video(temporary)
                 location = f"{uuid4().hex}.{metadata.pop('extension')}"
                 preview_location = f"{Path(location).stem}.preview.jpg"
@@ -150,7 +156,9 @@ class LocalStorage:
                 created.append(original_path)
                 metadata.update(
                     size=size,
+                    sha256=digest,
                     original_filename=Path(filename.replace("\\", "/")).name,
+                    preview_size=len(preview),
                     preview_location=preview_location,
                     preview_mime_type="image/jpeg",
                 )

@@ -3,11 +3,21 @@ export type YoloParameters = {
   iou: string;
   imageSize: string;
   device: string;
+  classMode: "all" | "selected";
+  classes: string[];
+  maxDet: string;
+  vidStride: string;
+  agnosticNms: boolean;
 };
 
 export const defaultParameters: YoloParameters = {
   confidence: "0.25",
-  iou: "0.45",
+  iou: "0.7",
   imageSize: "640",
-  device: "cpu",
+  device: "auto",
+  classMode: "all",
+  classes: [],
+  maxDet: "300",
+  vidStride: "1",
+  agnosticNms: false,
 };

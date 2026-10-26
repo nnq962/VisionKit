@@ -48,6 +48,11 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
     (
         """ALTER TABLE models ADD COLUMN inspection_json TEXT NOT NULL DEFAULT '{"status":"uninspected"}'""",
     ),
+    (
+        "ALTER TABLE models ADD COLUMN expires_at TEXT",
+        "CREATE INDEX model_expiry_idx ON models(expires_at)",
+    ),
+    ("CREATE TABLE runs (id TEXT PRIMARY KEY, record_json TEXT NOT NULL)",),
 )
 
 

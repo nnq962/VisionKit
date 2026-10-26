@@ -14,6 +14,7 @@ class Settings:
         database_path: File SQLite, không thay đổi đường dẫn dữ liệu đã có.
         sources_path: Thư mục quản lý file nguồn được upload.
         ai_url: URL API nội bộ AI; None tắt tự động inspect trong unit test.
+        runs_path: Thư mục snapshot tạm cho inference, mặc định data/runs.
         models_path: Thư mục model; mặc định cạnh thư mục sources.
         max_model_upload_bytes: Giới hạn dung lượng model upload.
         max_model_bytes: Giới hạn dung lượng một model khi tải.
@@ -28,6 +29,7 @@ class Settings:
     sources_path: Path
     models_path: Path | None = None
     ai_url: str | None = None
+    runs_path: Path | None = None
     max_model_upload_bytes: int = 200 * 1024 * 1024
     max_model_bytes: int = 1024 * 1024 * 1024
     model_download_concurrency: int = 2
@@ -52,6 +54,9 @@ def load_settings() -> Settings:
         .expanduser()
         .resolve(),
         sources_path=Path(os.getenv("VISIONKIT_SOURCES_PATH", str(root / "sources")))
+        .expanduser()
+        .resolve(),
+        runs_path=Path(os.getenv("VISIONKIT_RUNS_PATH", str(root / "runs")))
         .expanduser()
         .resolve(),
         ai_url=os.getenv("VISIONKIT_AI_URL", "http://127.0.0.1:8001").rstrip("/"),

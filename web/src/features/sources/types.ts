@@ -22,6 +22,12 @@ export type VisionSource = {
   error?: string;
   saved?: boolean;
   createdAt?: string;
+  updatedAt?: string;
+  originalFilename?: string;
+  mimeType?: string;
+  sha256?: string;
+  previewLocation?: string;
+  previewSize?: number;
 };
 
 export const sourceKinds: { value: SourceKind; label: string; hint: string }[] =
