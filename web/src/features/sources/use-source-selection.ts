@@ -6,6 +6,8 @@ import { useSourceLibrary } from "./use-source-library";
 import { useSourceDrafts } from "./use-source-drafts";
 import { captureScreenFrame } from "./browser-capture";
 import { inspectRtspUrl } from "./rtsp-configuration";
+import { checkLocalWebcam } from "./webcam-api";
+import { applyYoutube, createYoutube, deleteYoutube, getYoutube } from "./youtube-api";
 import { readMediaMetadata } from "./media-metadata";
 import { configureRtspSource, deleteSource, inspectImage, renameSource, saveSource } from "./api";
 import type { SourceKind, VisionSource } from "./types";
@@ -22,8 +24,6 @@ export function useSourceSelectionState() {
   const active = useRef(true);
   const urls = useRef(new Set<string>());
   const streams = useRef(new Set<MediaStream>());
-  const liveCamera = useRef<VisionSource | null>(null);
-  const cameraRequest = useRef(0);
 
   useEffect(() => {
     active.current = true;
@@ -44,45 +44,31 @@ export function useSourceSelectionState() {
     return active.current && drafts.isCurrent(source);
   }
 
-  function stopCamera() {
-    cameraRequest.current++;
-    const camera = liveCamera.current;
-    if (!camera) return;
-    liveCamera.current = null;
-    camera.mediaStream?.getTracks().forEach((track) => track.stop());
-    if (camera.mediaStream) streams.current.delete(camera.mediaStream);
-    drafts.publish({ ...camera, mediaStream: undefined, status: "pending" });
-  }
-
   function clearFeedback() {
     setNotice("");
     setSaveError("");
   }
 
   function begin(next: VisionSource) {
-    stopCamera();
     drafts.begin(next);
     clearFeedback();
   }
 
   function select(next: VisionSource | null) {
-    stopCamera();
     drafts.select(next);
     clearFeedback();
   }
 
   function setMode(mode: "new" | "saved") {
-    stopCamera();
     drafts.setMode(mode);
     clearFeedback();
   }
   function setKind(kind: SourceKind) {
-    stopCamera();
     drafts.setKind(kind);
     clearFeedback();
   }
   function discardDraft() {
-    stopCamera();
+    if (source?.kind === "youtube") { void discardYoutube(); return; }
     if (source?.streamPreview && !source.saved) videoStreams.discardTemporary(source.id);
     if (source?.previewUrl?.startsWith("blob:"))
       URL.revokeObjectURL(source.previewUrl);
@@ -155,63 +141,18 @@ export function useSourceSelectionState() {
     }
   }
 
-  async function openCamera() {
-    const previous = source?.kind === "webcam" ? source : null;
+  async function openCamera(deviceIndex = source?.deviceIndex ?? 0) {
+    const previous = source?.kind === "webcam" && source.deviceIndex === deviceIndex ? source : null;
     const base: VisionSource = {
-      id: previous?.id ?? crypto.randomUUID(),
-      kind: "webcam",
-      name: previous?.name ?? "Webcam / USB",
-      location: "browser-camera",
-      deviceId: previous?.deviceId,
-      status: "loading",
-      format: "MediaStream",
+      id: previous?.id ?? crypto.randomUUID(), kind: "webcam", name: `Webcam ${deviceIndex} · máy AI`,
+      location: String(deviceIndex), deviceIndex, status: "loading", format: "Webcam local",
     };
     begin(base);
-    const request = cameraRequest.current;
     try {
-      if (!navigator.mediaDevices?.getUserMedia)
-        throw new Error(
-          "Trình duyệt không hỗ trợ camera. Mở bằng localhost hoặc HTTPS.",
-        );
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: base.deviceId ? { deviceId: { exact: base.deviceId } } : true,
-        audio: false,
-      });
-      if (!isCurrent(base) || request !== cameraRequest.current) {
-        stream.getTracks().forEach((track) => track.stop());
-        if (isCurrent(base)) drafts.publish({ ...base, status: "pending" });
-        return;
-      }
-      streams.current.add(stream);
-      const track = stream.getVideoTracks()[0];
-      const settings = track.getSettings();
-      track.onended = () => {
-        stopCamera();
-      };
-      const cameraSource: VisionSource = {
-        ...base,
-        name: previous?.name ?? track.label ?? base.name,
-        mediaStream: stream,
-        deviceId: settings.deviceId,
-        width: settings.width,
-        height: settings.height,
-        fps: settings.frameRate,
-        status: "ready",
-      };
-      liveCamera.current = cameraSource;
-      drafts.publish(cameraSource);
-    } catch (error) {
-      if (isCurrent(base))
-        drafts.publish({
-          ...base,
-          status: "error",
-          error:
-            error instanceof DOMException && error.name === "NotAllowedError"
-              ? "Chưa được cấp quyền camera. Cho phép truy cập rồi thử lại."
-              : error instanceof DOMException && error.name === "NotFoundError"
-                ? "Không tìm thấy webcam/USB. Kết nối camera rồi thử lại."
-                : (error as Error).message,
-        });
+      const camera = await checkLocalWebcam(deviceIndex);
+      if (isCurrent(base)) drafts.publish({ ...base, width: camera.width, height: camera.height, previewUrl: `data:image/jpeg;base64,${camera.preview_jpeg}`, status: "ready" });
+    } catch (reason) {
+      if (isCurrent(base)) drafts.publish({ ...(previous?.status === "ready" ? previous : base), status: previous?.status === "ready" ? "ready" : "error", error: (reason as Error).message });
     }
   }
 
@@ -272,15 +213,57 @@ export function useSourceSelectionState() {
     }
   }
 
-  function selectYoutube(location: string) {
-    begin({
-      id: crypto.randomUUID(),
-      kind: "youtube",
-      name: location,
-      location,
-      status: "pending",
-      format: "YouTube",
-    });
+  useEffect(() => {
+    if (source?.kind !== "youtube" || !source.youtubeSession || source.status !== "loading") return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const job = await getYoutube(source!.youtubeSession!, controller.signal);
+        if (!controller.signal.aborted && isCurrent(source!)) {
+          drafts.publish(applyYoutube(source!, job));
+          if (["queued", "preparing"].includes(job.status)) timer = setTimeout(() => void poll(), 1000);
+        }
+      } catch (reason) {
+        if (!controller.signal.aborted && isCurrent(source!)) drafts.publish({ ...source!, status: "error", error: (reason as Error).message });
+      }
+    }
+    void poll();
+    return () => { controller.abort(); clearTimeout(timer); };
+    // Poll owns one session; publishing metadata must not restart its timer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source?.id, source?.youtubeSession, source?.status]);
+
+  function setLocation(location: string) {
+    if (source?.kind === "youtube" && source.youtubeSession && location !== drafts.location) {
+      // Best-effort cleanup on URL edits; backend TTL also reclaims offline sessions.
+      void deleteYoutube(source.youtubeSession).catch(() => {});
+    }
+    drafts.setLocation(location);
+  }
+
+  async function selectYoutube(location: string) {
+    const previous = source?.kind === "youtube" ? source.youtubeSession : undefined;
+    const next: VisionSource = { id: crypto.randomUUID(), kind: "youtube", name: "YouTube", location, status: "loading", format: "YouTube" };
+    begin(next);
+    try {
+      if (previous) await deleteYoutube(previous);
+      const job = await createYoutube(location);
+      if (isCurrent(next)) drafts.publish(applyYoutube(next, job));
+      else await deleteYoutube(job.id);
+    } catch (reason) {
+      if (isCurrent(next)) drafts.publish({ ...next, status: "error", error: (reason as Error).message });
+    }
+  }
+
+  async function discardYoutube() {
+    const current = source;
+    try {
+      if (current?.youtubeSession) await deleteYoutube(current.youtubeSession);
+      if (current && isCurrent(current)) drafts.discardDraft();
+    } catch (reason) {
+      if (current && isCurrent(current)) drafts.publish({ ...current, error: (reason as Error).message });
+    }
   }
 
   async function save(): Promise<boolean> {
@@ -409,6 +392,21 @@ export function useSourceSelectionState() {
     }
   }
 
+  async function finishCurrent() {
+    const current = source;
+    if (!current) return () => {};
+    if (current.youtubeSession) await deleteYoutube(current.youtubeSession);
+    if (current.kind === "stream") {
+      await videoStreams.stop(current.id);
+      if (!current.saved) videoStreams.discardTemporary(current.id);
+    }
+    current.mediaStream?.getTracks().forEach((track) => track.stop());
+    for (const url of new Set([current.previewUrl, current.thumbnailUrl])) {
+      if (url?.startsWith("blob:")) { URL.revokeObjectURL(url); urls.current.delete(url); }
+    }
+    return () => { drafts.finishSelection(current.id); clearFeedback(); };
+  }
+
   return {
     ...drafts,
     ...savedSources,
@@ -420,10 +418,13 @@ export function useSourceSelectionState() {
     notice,
     select,
     setKind,
+    setLocation,
     setMode,
     discardDraft,
+    finishCurrent,
     selectFile,
     selectYoutube,
+    discardYoutube,
     openCamera,
     captureScreen,
     save,
@@ -432,7 +433,6 @@ export function useSourceSelectionState() {
     checkRtsp,
     updateRtspDraft,
     remove,
-    stopCamera,
   };
 }
 

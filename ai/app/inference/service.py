@@ -9,7 +9,11 @@ from collections.abc import AsyncIterator
 from contextlib import aclosing
 from pathlib import Path
 
-from app.contracts.prediction import PredictRequest, StreamPredictRequest
+from app.contracts.prediction import (
+    PredictRequest,
+    StreamPredictRequest,
+    WebcamPredictRequest,
+)
 from app.core.config import Settings
 from app.core.worker_logs import drain_stderr, read_worker_output, stop_worker
 
@@ -116,7 +120,45 @@ class InferenceService:
             async for event in events:
                 yield event
 
-    async def stream(self, request: StreamPredictRequest) -> AsyncIterator[dict]:
+    async def check_webcam(self, device_index: int) -> dict:
+        """Kiểm webcam bằng worker tối đa 20 giây và luôn reap; không chiếm camera đang suy luận."""
+        if self.semaphore.locked():
+            raise ValueError("AI đang bận. Dừng lượt chạy trước khi kiểm tra webcam.")
+        async with self.semaphore:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "app.inference.webcam_probe",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env={
+                    **os.environ,
+                    "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
+                },
+            )
+            stderr_task = asyncio.create_task(drain_stderr(process.stderr))
+            try:
+                stdout, _ = await asyncio.wait_for(
+                    read_worker_output(
+                        process, json.dumps({"device_index": device_index}).encode()
+                    ),
+                    20,
+                )
+                result = json.loads(stdout)
+                if result.get("error"):
+                    raise ValueError(result["error"])
+                return result
+            except asyncio.TimeoutError:
+                raise ValueError(
+                    "Webcam không phản hồi. Kiểm tra quyền camera của Python/Terminal rồi thử lại."
+                ) from None
+            finally:
+                await stop_worker(process, stderr_task)
+
+    async def stream(
+        self, request: StreamPredictRequest | WebcamPredictRequest
+    ) -> AsyncIterator[dict]:
         """Xác minh model local và chạy RTSP worker riêng, không mở nguồn mạng trong API process."""
         model = self.path(self.settings.models_path, request.model_location)
         if (
@@ -130,7 +172,7 @@ class InferenceService:
 
     async def _stream_worker(
         self,
-        request: PredictRequest | StreamPredictRequest,
+        request: PredictRequest | StreamPredictRequest | WebcamPredictRequest,
         model: Path,
         source: Path | None = None,
     ) -> AsyncIterator[dict]:
@@ -138,8 +180,14 @@ class InferenceService:
 
         RTSP chạy module riêng, URL chỉ qua stdin; video vẫn giữ protocol file/pipe.
         """
-        live = isinstance(request, StreamPredictRequest)
-        label = "RTSP" if live else "video"
+        live = isinstance(request, (StreamPredictRequest, WebcamPredictRequest))
+        label = (
+            "webcam"
+            if isinstance(request, WebcamPredictRequest)
+            else "RTSP"
+            if live
+            else "video"
+        )
         module = "app.inference.stream_worker" if live else "app.inference.video_worker"
         arguments = [str(model)] if live else [str(model), str(source)]
         async with self.semaphore:
@@ -185,7 +233,9 @@ class InferenceService:
                         if live:
                             event = {
                                 "type": "error",
-                                "error": "Không xử lý được RTSP. Kiểm tra model, camera và kết nối.",
+                                "error": "Không đọc được webcam. Kiểm tra ID, quyền camera của Python và ứng dụng đang dùng camera."
+                                if isinstance(request, WebcamPredictRequest)
+                                else "Không xử lý được RTSP. Kiểm tra model, camera và kết nối.",
                             }
                         logger.error(
                             "Inference %s thất bại: %s",

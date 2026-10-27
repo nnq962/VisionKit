@@ -15,6 +15,8 @@ export function validateStep(
     return "Đợi đọc thông tin source trước khi tiếp tục.";
   if (step === 0 && source?.status === "error")
     return "Source chưa hợp lệ. Chọn lại tệp được hỗ trợ.";
+  if (step === 0 && source && ["youtube", "webcam"].includes(source.kind) && source.status !== "ready")
+    return "Chuẩn bị nguồn hoặc kiểm tra webcam trước khi tiếp tục.";
   if (step === 1 && !model)
     return "Chọn model đã có hoặc tải lên model để tiếp tục.";
   if (step === 2) return validateParameters(parameters, model, source);

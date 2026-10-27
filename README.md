@@ -132,3 +132,15 @@ video remains independent. The default is at most 5 AI FPS for 60 minutes,
 configurable in the pipeline. Runs continue across routes and can be stopped from
 the Run step after returning with the same configuration. `VISIONKIT_MEDIAMTX_RTSP_URL`
 configures the relay address reachable by AI (launcher sets it automatically).
+
+Ordinary YouTube videos are also available in the source picker: paste a link →
+prepare temporary video → preview/seek → select model → run AI. This uses a
+bounded yt-dlp download (up to 720p H.264 MP4), not the RTSP relay. Cached video
+is temporary and separate from the source library. YouTube Live is not enabled.
+Backend setup now includes yt-dlp/EJS via `uv sync --locked`; Node.js must be on
+PATH for YouTube extraction. See the backend/web READMEs for limits and lifecycle.
+
+Webcam / USB now supports AI-host devices directly by OpenCV index (default 0).
+The UI notes that browser and server should run on the same machine. Check takes
+one snapshot and releases capture; Run opens the camera directly for YOLO, with
+bounded HTTP frame preview and JSON annotations. No MediaMTX is used for webcam.

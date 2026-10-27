@@ -5,6 +5,7 @@ import type { VisionSource } from "@/features/sources/types";
 import type { YoloParameters } from "@/features/pipelines/yolo/types";
 import {
   cancelRun,
+  finishRun,
   eventsUrl,
   getRun,
   startRun,
@@ -19,6 +20,7 @@ export function useInferenceRun(
   const [run, setRun] = useState<InferenceRun | null>(null);
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const [stopping, setStopping] = useState(false);
   const pending = useRef(false);
   const mounted = useRef(true);
@@ -104,7 +106,26 @@ export function useInferenceRun(
     error,
     starting,
     stopping,
+    finishing,
     active,
+    async finish(complete: () => Promise<void>) {
+      if (!run || active || pending.current) return;
+      pending.current = true;
+      setFinishing(true);
+      setError("");
+      restoring.current?.abort();
+      try {
+        await finishRun(run.id);
+        try { sessionStorage.removeItem(`visionkit:run:${selectionKey}`); } catch {}
+        await complete();
+        if (mounted.current) setRun(null);
+      } catch (reason) {
+        if (mounted.current) setError((reason as Error).message);
+      } finally {
+        pending.current = false;
+        if (mounted.current) setFinishing(false);
+      }
+    },
     async start() {
       if (pending.current || active || !source || !modelId) return;
       restoring.current?.abort();

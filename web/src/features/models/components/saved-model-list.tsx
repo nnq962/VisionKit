@@ -77,7 +77,7 @@ export function SavedModelList({
           ) : (
             <Button
               size="icon-sm"
-              variant="ghost"
+              variant="destructive"
               disabled={busy.includes(item.id)}
               aria-label={`Xoá ${item.filename}`}
               onClick={() => setConfirm(item.id)}

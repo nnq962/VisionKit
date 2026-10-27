@@ -49,7 +49,7 @@ Metadata phân biệt `family` (YOLO/YOLOE), `model_series` (YOLO26/YOLO11/YOLOv
 
 Ultralytics handles `.pt` and ONNX; pinned `onnxruntime<1.24` retains Python 3.10 wheel support. HEIC/HEIF uses pillow-heif; input decoding applies EXIF orientation before inference. PT uses the restricted loader with no unsafe fallback or auto-install/download. ONNX external tensors and fixed batch other than 1 are rejected. Auto chooses CUDA/MPS/CPU for PT; ONNX currently runs CPU. Explicit unavailable devices return an actionable error rather than silently falling back. The subprocess is not an OS sandbox; keep this local service for trusted model artifacts.
 
-Results normalize detections/pose keypoints into original image pixel coordinates for the reusable web canvas. Classification returns top5; segmentation/OBB additionally retain polygons. Pose points are rendered without assuming custom skeleton ordering. YOLOE models requiring text/visual prompts are not configured by this MVP. Video files use the file streaming endpoint below; RTSP inference uses its separate internal stream endpoint. Webcam inference is not connected.
+Results normalize detections/pose keypoints into original image pixel coordinates for the reusable web canvas. Classification returns top5; segmentation/OBB additionally retain polygons. Pose points are rendered without assuming custom skeleton ordering. YOLOE models requiring text/visual prompts are not configured by this MVP. Video files use the file streaming endpoint below; RTSP inference uses its separate internal stream endpoint. Local webcam inference is available through the dedicated webcam endpoint below.
 
 ## Video file inference
 
@@ -135,3 +135,23 @@ camera connection with WebRTC preview. `options.max_fps` (1–60, default 5) pac
 prediction, reading the newest slot after each wait. Capture continues replacing
 old frames while the model runs; no inference backlog is accumulated. Video
 frames are decoded only inside AI; backend receives JSON results.
+
+## Local webcam
+
+POST /api/v1/webcams/check probes a strict integer device_index (0–15, default 0)
+in a separate worker with a 20-second timeout, returning dimensions and a single
+JPEG before releasing capture. An active inference semaphore prevents probing
+while a model is running. POST /api/v1/inference/webcam accepts the shared model
+contract plus device_index/duration_seconds and runs the existing latest-frame
+adapter with WebcamReader directly. There is no MediaMTX/browser upload.
+
+The model loads once, reads newest frames and follows max_fps/duration settings.
+Only webcam events include preview_jpeg, resized at most 960px/quality 70, for
+backend HTTP preview. Detections remain in original-frame coordinates. Capture
+and inference use the same frame; backend strips images from JSON/DB/WebSocket.
+Cancel/timeout/worker termination releases the webcam. Device 0 is on the machine
+running AI; OS camera permission must be granted to its Python/launcher process.
+
+Webcam checks and webcam inference request a one-second capture warmup, dropping
+initial frames before using a snapshot/result. Warmup is bounded and releases
+capture on failure; other reader consumers keep the previous zero-warmup default.

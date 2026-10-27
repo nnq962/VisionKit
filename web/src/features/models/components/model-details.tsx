@@ -83,11 +83,11 @@ export function ModelDetails({
               {details.map(([label, value]) => (
                 <div
                   key={label}
-                  className="flex justify-between gap-4 py-3 first:pt-0"
+                  className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-4 py-3 first:pt-0"
                 >
                   <dt className="shrink-0 text-muted-foreground">{label}</dt>
                   <dd
-                    className="min-w-0 break-all text-right font-medium"
+                    className="min-w-0 break-all text-left font-medium"
                     title={label === "SHA-256" ? model?.sha256 : undefined}
                   >
                     {value}

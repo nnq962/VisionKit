@@ -160,7 +160,7 @@ States: queued → running → completed/failed/cancelled. At most four active/q
 
 Run snapshots and result JSON expire after 24 hours. Startup and a ten-minute sweep clean expired terminal records/files. Expired records return 410 before cleanup, 404 after; saved library sources/models are unaffected. Backend restart marks interrupted jobs failed. These local DB/file operations are not atomic across power failure; orphan reconciliation remains future work.
 
-Completed JSON contains original-coordinate bbox/keypoints, class scores, actual device, timing and classification top5. Segmentation/OBB polygons are retained in JSON; current canvas UI displays bbox/keypoints only. RTSP inference uses the separate stream-run endpoint below. Webcam inference, tracking, model prompting and a persistent run library are not implemented.
+Completed JSON contains original-coordinate bbox/keypoints, class scores, actual device, timing and classification top5. Segmentation/OBB polygons are retained in JSON; current canvas UI displays bbox/keypoints only. RTSP inference uses the separate stream-run endpoint below. Local webcam inference is documented below; tracking, model prompting and a persistent run library are not implemented.
 
 ## Streaming video runs
 
@@ -398,3 +398,54 @@ returns 409. `options.max_fps` limits live inference to 1–60 FPS (default 5).
 The older `/runs/stream` endpoint remains a direct-camera compatibility API;
 the web uses `/runs/live`. JSON run events use the existing WebSocket, with GET
 polling fallback. Inference concurrency remains one: additional runs queue.
+
+## YouTube video preparation
+
+The web supports ordinary public YouTube videos through temporary file preparation.
+`POST /api/v1/youtube/sessions` accepts `{ "url": "https://youtu.be/<video-id>" }`
+and returns a queued job. Poll `GET /api/v1/youtube/sessions/{id}` until `ready` or
+`failed`; `DELETE` cancels/reaps download and removes the cache. `/content` serves
+the verified MP4 with HTTP Range for seeking; `/thumbnail` serves a generated JPEG.
+No source-library row is created. Link variants (watch, shorts, live, embed and
+short URLs) normalize to one canonical video URL; playlists and arbitrary hosts
+are rejected. Live/upcoming videos report that this flow is for finished videos.
+
+A separate yt-dlp worker selects H.264 MP4 up to 720p, with a single concurrent
+download, maximum four cached jobs, three-minute preparation timeout and the
+configured video upload byte limit (default 200 MiB). Progress hooks bound unknown
+file sizes. Cache expires after an hour without access; startup/shutdown remove
+module-owned temporary files. Node.js on PATH supplies the YouTube JavaScript
+runtime; `uv sync --locked` installs yt-dlp and its EJS scripts. No browser cookies
+or account login are used. YouTube availability, bot checks and formats can cause
+preparation to fail; errors never expose signed media URLs.
+
+`POST /api/v1/runs/youtube` receives `session_id`, `model_id` and `options`. It
+snapshots a prepared video through the existing local-video pipeline, with SHA-256
+verification and original-coordinate results. AI reads a file, never resolves a
+YouTube URL. Deleting the preparation cache does not delete the run snapshot.
+The existing `VISIONKIT_RUNS_PATH` must be shared between backend and AI, as for
+uploaded videos. Runs begin at the start of the video; seeking in source preview
+does not change inference start time. Run retention remains 24 hours.
+
+## Direct local webcam inference
+
+`POST /api/v1/runs/webcam/check` accepts `{ "device_index": 0 }` and proxies to an
+AI probe with a 20-second timeout. The probe reads one frame and closes capture.
+`POST /api/v1/runs/webcam` accepts model_id, device_index, options and
+ duration_seconds with the same live limits as RTSP. Device indices are strict
+integers 0–15, not browser camera identifiers or file/URL strings. Only one active
+or queued run may reserve the same webcam, checked under the model/run lock.
+
+AI opens the device directly. No MediaMTX path or source-library row is created.
+Webcam results use source_kind=webcam with live progress; preview JPEG travels only
+on internal AI events, is removed before run JSON storage/events, and is served by
+GET /runs/{id}/preview with no-store headers. RAM keeps at most four JPEGs, each
+at most 2 MiB. Snapshots are not written to disk; restart removes the frame cache.
+The normal cancel/worker cleanup releases camera ownership. The web explicitly
+notes that this feature is for the browser running on the server machine.
+
+`DELETE /api/v1/runs/{id}/resources` completes a pipeline run: it waits for active
+worker cancellation if needed, removes only that run's snapshot/thumbnail,
+webcam RAM frame and JSON record, and leaves saved source/model files untouched.
+The endpoint is idempotent (204 for an already removed run). The web calls it
+before releasing its own preview/cache and resetting the source picker.

@@ -11,6 +11,7 @@ import {
   uploadModel,
   saveTemporaryModel,
   deleteModel,
+  releaseTemporaryModel,
   type StoredModel,
 } from "./api";
 import {
@@ -432,6 +433,16 @@ export function useModelSelectionState() {
     validate,
     cancel() {
       upload.current?.abort();
+    },
+    async finishTemporary() {
+      const id = current.current.temporaryId;
+      if (!id || selected?.id !== id || !selected.expiresAt) return () => {};
+      await releaseTemporaryModel(id);
+      return () => {
+        setTemporary(null);
+        update({ file: null, name: "", temporaryId: null });
+        setProgress(0);
+      };
     },
     discard() {
       const id = current.current.temporaryId;

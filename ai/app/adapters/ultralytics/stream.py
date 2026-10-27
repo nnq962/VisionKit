@@ -1,18 +1,24 @@
 """Chạy RTSP bằng reader latest-frame; không lưu/stream ảnh nhị phân về backend."""
 
+import base64
 import time
 from collections.abc import Callable
 from pathlib import Path
 
+import cv2
+import numpy as np
+
 from app.adapters.ultralytics.results import serialize_result
 from app.adapters.ultralytics.yolo import load_model
-from app.contracts.prediction import StreamPredictRequest
+from app.contracts.prediction import StreamPredictRequest, WebcamPredictRequest
 from app.media_sources import StreamBatchReader, create_media_source
 
 
 # ----------------------------- Suy luận RTSP ---------------------------------
 def predict_stream(
-    model_path: Path, request: StreamPredictRequest, publish: Callable[[dict], None]
+    model_path: Path,
+    request: StreamPredictRequest | WebcamPredictRequest,
+    publish: Callable[[dict], None],
 ) -> None:
     """Nạp model một lần, đọc latest-frame và gửi NDJSON metadata/kết quả theo thời hạn.
 
@@ -20,12 +26,17 @@ def predict_stream(
     index nguồn. Hết hạn trả completed; EOF/mất camera là lỗi, không completed.
     """
     model, device = load_model(model_path, request)
-    reader = create_media_source(
-        request.stream_url.get_secret_value(),
-        reconnect_delay=1,
-        max_reconnect_attempts=5,
-        read_timeout_ms=3000,
-        open_timeout_ms=5000,
+    webcam = isinstance(request, WebcamPredictRequest)
+    reader = (
+        create_media_source(request.device_index, warmup_seconds=1)
+        if webcam
+        else create_media_source(
+            request.stream_url.get_secret_value(),
+            reconnect_delay=1,
+            max_reconnect_attempts=5,
+            read_timeout_ms=3000,
+            open_timeout_ms=5000,
+        )
     )
     # Chờ lâu hơn read timeout để capture thread tự release trước terminal event.
     with StreamBatchReader([reader], join_timeout=6, wait_timeout=15) as sources:
@@ -79,7 +90,10 @@ def predict_stream(
                 "is_live": True,
                 "elapsed_seconds": round(elapsed, 2),
             }
-            publish({"type": "frame", "result": latest, "progress": progress})
+            event = {"type": "frame", "result": latest, "progress": progress}
+            if webcam:
+                event["preview_jpeg"] = webcam_preview(frames[0])
+            publish(event)
         if latest is None:
             raise ValueError("Không nhận được frame suy luận từ camera.")
     publish(
@@ -90,3 +104,20 @@ def predict_stream(
             "progress": progress,
         }
     )
+
+
+# ------------------------- Preview từ cùng frame AI ---------------------------
+def webcam_preview(frame: np.ndarray) -> str:
+    """Nén frame webcam tối đa 960px/quality 70 cho HTTP preview, không ghi file.
+
+    Nhận ndarray BGR gốc, trả base64 JPEG có giới hạn. Chỉ dùng cho webcam local;
+    RTSP vẫn phát WebRTC và không tạo JPEG. BBox luôn dùng toạ độ frame gốc.
+    """
+    height, width = frame.shape[:2]
+    scale = min(1, 960 / max(width, height))
+    if scale < 1:
+        frame = cv2.resize(frame, (round(width * scale), round(height * scale)))
+    ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    if not ok or encoded.nbytes > 2 * 1024 * 1024:
+        raise ValueError("Không tạo được preview webcam trong giới hạn.")
+    return base64.b64encode(encoded).decode("ascii")

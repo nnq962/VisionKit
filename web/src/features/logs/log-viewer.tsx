@@ -102,18 +102,15 @@ export function LogViewer() {
             aria-label="Di chuyển cửa sổ log"
             aria-describedby="log-drag-hint"
             title="Kéo để di chuyển cửa sổ log"
-            className="flex shrink-0 touch-none cursor-grab select-none items-center gap-3 border-b px-4 py-3 outline-none data-[dragging=true]:cursor-grabbing focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="flex shrink-0 touch-none cursor-grab select-none items-center gap-2 border-b px-3 py-1.5 outline-none data-[dragging=true]:cursor-grabbing focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             <span id="log-drag-hint" className="sr-only">Kéo header hoặc dùng phím mũi tên để di chuyển. Giữ Shift để di chuyển nhanh. Nhấn Home để về vị trí mặc định.</span>
             <GripVerticalIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground/60" />
-            <div className="hidden size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/60 text-primary @sm:flex"><TerminalIcon className="size-4" /></div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <Dialog.Title className="truncate text-sm font-semibold">Nhật ký hệ thống</Dialog.Title>
-                <span className="hidden shrink-0 rounded border bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground @sm:inline">Trực tiếp</span>
-              </div>
-              <Dialog.Description id="log-preview-description" className="mt-0.5 truncate text-xs text-muted-foreground">Backend & AI engine</Dialog.Description>
-            </div>
+            <TerminalIcon aria-hidden="true" className="hidden size-3.5 shrink-0 text-muted-foreground @sm:block" />
+            <Dialog.Title className="min-w-0 flex-1 truncate text-xs font-semibold">Nhật ký hệ thống</Dialog.Title>
+            <Dialog.Description id="log-preview-description" className="sr-only">Nhật ký Backend và AI, có bộ lọc và tìm kiếm.</Dialog.Description>
+            <Button size="icon-sm" variant="ghost" aria-label={paused ? "Tiếp tục nhận log" : "Tạm dừng nhận log"} title={paused ? "Tiếp tục" : "Tạm dừng"} aria-pressed={paused} onClick={() => setPaused(!paused)}>{paused ? <PlayIcon /> : <PauseIcon />}</Button>
+            <Button size="icon-sm" variant="ghost" aria-label="Xóa log đang hiển thị" title="Xóa màn hình" disabled={!entries.length} onClick={clear}><Trash2Icon /></Button>
             <Button size="icon-sm" variant="ghost" aria-label={expanded ? "Thu gọn cửa sổ log" : "Mở rộng cửa sổ log"} title={expanded ? "Thu gọn" : "Mở rộng"} onClick={toggleExpanded}>
               {expanded ? <Minimize2Icon /> : <Maximize2Icon />}
             </Button>
@@ -122,9 +119,9 @@ export function LogViewer() {
             </Dialog.Close>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 pt-3 pb-2">
-            <div className="flex w-full rounded-lg bg-muted p-0.5 @sm:w-auto" role="group" aria-label="Lọc nguồn log">
-              {[["all", "Tất cả"], ["backend", "Backend"], ["ai", "AI engine"]].map(([value, label]) => (
+          <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 @xl:grid-cols-[auto_auto_minmax(0,1fr)]">
+            <div className="flex min-w-0 rounded-lg bg-muted p-0.5" role="group" aria-label="Lọc nguồn log">
+              {[["all", "Tất cả"], ["backend", "Backend"], ["ai", "AI"]].map(([value, label]) => (
                 <button key={value} type="button" aria-pressed={service === value} onClick={() => setService(value)} className={`flex-1 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring ${service === value ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"}`}>{label}</button>
               ))}
             </div>
@@ -138,15 +135,11 @@ export function LogViewer() {
                 <SelectItem value="ERROR">Lỗi</SelectItem>
               </SelectGroup></SelectContent>
             </Select>
-            <div className="ml-auto flex gap-1">
-              <Button size="icon-sm" variant="ghost" aria-label={paused ? "Tiếp tục nhận log" : "Tạm dừng nhận log"} title={paused ? "Tiếp tục" : "Tạm dừng"} aria-pressed={paused} onClick={() => setPaused(!paused)}>{paused ? <PlayIcon /> : <PauseIcon />}</Button>
-              <Button size="icon-sm" variant="ghost" aria-label="Xóa log đang hiển thị" title="Xóa màn hình" disabled={!entries.length} onClick={clear}><Trash2Icon /></Button>
+            <div className="relative col-span-2 min-w-0 @xl:col-span-1">
+              <SearchIcon aria-hidden="true" className="absolute top-2 left-2.5 size-3.5 text-muted-foreground" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} aria-label="Tìm trong log" placeholder="Tìm trong log…" className="h-8 w-full rounded-lg border border-border bg-muted/30 pr-8 pl-8 text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20" />
+              {search && <button type="button" aria-label="Xóa tìm kiếm log" onClick={() => setSearch("")} className="absolute top-1.5 right-2 rounded p-0.5 text-muted-foreground"><XIcon className="size-3.5" /></button>}
             </div>
-          </div>
-          <div className="relative mx-4 mb-3 shrink-0">
-            <SearchIcon aria-hidden="true" className="absolute top-2 left-2.5 size-3.5 text-muted-foreground" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} aria-label="Tìm trong log" placeholder="Tìm trong log…" className="h-8 w-full rounded-lg border border-border bg-muted/30 pr-8 pl-8 text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20" />
-            {search && <button type="button" aria-label="Xóa tìm kiếm log" onClick={() => setSearch("")} className="absolute top-1.5 right-2 rounded p-0.5 text-muted-foreground"><XIcon className="size-3.5" /></button>}
           </div>
 
           {(notice || connection === "offline" || (ai && (!ai.configured || ai.available === false))) && (

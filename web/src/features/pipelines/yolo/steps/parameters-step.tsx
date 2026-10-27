@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import type { StoredModel } from "@/features/models/api";
 import type { VisionSource } from "@/features/sources/types";
+import { ThresholdSlider } from "../components/parameters/threshold-slider";
 import { ClassFilter } from "../components/parameters/class-filter";
 import { ParameterContext } from "../components/parameters/parameter-context";
 import {
@@ -78,46 +79,8 @@ export function ParametersStep({
           </p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="confidence">Confidence</Label>
-              <Input
-                id="confidence"
-                type="number"
-                inputMode="decimal"
-                min="0"
-                max="1"
-                step="0.01"
-                value={parameters.confidence}
-                onChange={(event) => patch({ confidence: event.target.value })}
-                aria-describedby="confidence-hint"
-              />
-              <p
-                id="confidence-hint"
-                className="text-xs leading-5 text-muted-foreground"
-              >
-                Ngưỡng tin cậy tối thiểu · 0–1.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="iou">IoU / NMS</Label>
-              <Input
-                id="iou"
-                type="number"
-                inputMode="decimal"
-                min="0"
-                max="1"
-                step="0.05"
-                value={parameters.iou}
-                onChange={(event) => patch({ iou: event.target.value })}
-                aria-describedby="iou-hint"
-              />
-              <p
-                id="iou-hint"
-                className="text-xs leading-5 text-muted-foreground"
-              >
-                Lọc bbox trùng khi model dùng NMS.
-              </p>
-            </div>
+            <ThresholdSlider id="confidence" label="Confidence" hint="Ngưỡng tin cậy tối thiểu · 0–1." value={parameters.confidence} onChange={(confidence) => patch({ confidence })} />
+            <ThresholdSlider id="iou" label="IoU / NMS" hint="Lọc bbox trùng khi model dùng NMS · 0–1." value={parameters.iou} onChange={(iou) => patch({ iou })} />
           </div>
         )}
         <div className="grid gap-6 sm:grid-cols-2">
@@ -185,7 +148,7 @@ export function ParametersStep({
             </p>
           </div>
         </div>
-        {source?.kind === "stream" && (
+        {source && ["stream", "webcam"].includes(source.kind) && (
           <div className="grid gap-6 border-t pt-6 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="live-fps">Giới hạn AI (FPS)</Label>

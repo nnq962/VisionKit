@@ -12,6 +12,7 @@ dependencies = [
     "python-multipart>=0.0.32",
     "uvicorn>=0.54.0",
     "websockets>=16.1.1",
+    "yt-dlp[default]>=2026.6.9",
 ]
 
 [dependency-groups]

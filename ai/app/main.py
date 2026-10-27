@@ -13,7 +13,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.contracts.model import InspectRequest, InspectResult
-from app.contracts.prediction import PredictRequest, StreamPredictRequest
+from app.contracts.prediction import (
+    PredictRequest,
+    StreamPredictRequest,
+    WebcamCheckRequest,
+    WebcamPredictRequest,
+)
 from app.core.config import Settings, load_settings
 from app.core.logs import (
     LogBuffer,
@@ -179,6 +184,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         return StreamingResponse(
             stream(),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @application.post("/api/v1/webcams/check")
+    async def check_webcam(body: WebcamCheckRequest) -> dict:
+        """Kiểm đúng thiết bị trên máy AI, trả một ảnh xem trước rồi nhả camera."""
+        try:
+            return await inference.check_webcam(body.device_index)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+
+    @application.post("/api/v1/inference/webcam")
+    async def predict_webcam(body: WebcamPredictRequest) -> StreamingResponse:
+        """Đọc trực tiếp index webcam; NDJSON nội bộ có preview giới hạn, không qua MediaMTX."""
+
+        async def events() -> AsyncIterator[str]:
+            """Huỷ HTTP sẽ reap worker và đóng camera; lỗi chỉ trả thông báo kiểm soát."""
+            try:
+                async with aclosing(inference.stream(body)) as stream:
+                    async for event in stream:
+                        yield json.dumps(event, allow_nan=False) + "\n"
+            except ValueError:
+                yield (
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "error": "Không đọc được webcam. Kiểm tra ID, quyền camera của Python và ứng dụng đang dùng camera.",
+                        }
+                    )
+                    + "\n"
+                )
+
+        return StreamingResponse(
+            events(),
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-store"},
         )

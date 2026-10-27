@@ -14,12 +14,20 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import ValidationError
 
 from app.core.errors import SourceError
 
-from .schemas import LiveRunCreate, RunOptions, RunRecord, StreamRunCreate
+from .schemas import (
+    LiveRunCreate,
+    RunOptions,
+    RunRecord,
+    StreamRunCreate,
+    WebcamCheckRequest,
+    WebcamRunCreate,
+    YoutubeRunCreate,
+)
 from .service import RunService
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -29,6 +37,59 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 def get_service(request: Request) -> RunService:
     """Lấy service đang sống trong app, không mở thêm kết nối hoặc nạp model."""
     return request.app.state.runs
+
+
+# ------------------------- Kiểm webcam trên máy AI ----------------------------
+@router.post("/webcam/check")
+async def check_webcam(
+    body: WebcamCheckRequest, service: Annotated[RunService, Depends(get_service)]
+) -> dict:
+    """Proxy kiểm webcam local, không khởi chạy model hay mở camera từ backend."""
+    if not service.settings.ai_url:
+        raise SourceError(503, "AI chưa được cấu hình.")
+    try:
+        response = await service.client.post(
+            f"{service.settings.ai_url}/api/v1/webcams/check",
+            json=body.model_dump(),
+            timeout=25,
+        )
+        if response.status_code != 200:
+            detail = response.json().get("detail")
+            raise SourceError(
+                422,
+                detail if isinstance(detail, str) else "Không kiểm tra được webcam.",
+            )
+        return response.json()
+    except SourceError:
+        raise
+    except Exception:
+        raise SourceError(503, "Không kết nối được AI để kiểm tra webcam.") from None
+
+
+# ---------------------------- Chạy webcam local -------------------------------
+@router.post("/webcam", response_model=RunRecord, status_code=202)
+async def create_webcam_run(
+    body: WebcamRunCreate, service: Annotated[RunService, Depends(get_service)]
+) -> RunRecord:
+    """YOLO mở đúng device index local; không tạo path MediaMTX hoặc video snapshot."""
+    return await service.create_webcam(
+        body.model_id, body.options, body.device_index, body.duration_seconds
+    )
+
+
+# ------------------------- AI video YouTube đã chuẩn bị -----------------------
+@router.post("/youtube", response_model=RunRecord, status_code=202)
+async def create_youtube_run(
+    body: YoutubeRunCreate,
+    request: Request,
+    service: Annotated[RunService, Depends(get_service)],
+) -> RunRecord:
+    """Snapshot file cache đã xác minh; xoá job YouTube sau đó không ngắt run."""
+    path = request.app.state.youtube.content(body.session_id.hex)
+    with path.open("rb") as stream:
+        return await service.create(
+            body.model_id, body.options, stream, "youtube.mp4", "video"
+        )
 
 
 # --------------------------- AI camera qua relay -----------------------------
@@ -119,12 +180,28 @@ async def cancel_run(
     return await service.cancel(str(run_id))
 
 
+# --------------------------- Hoàn thành và dọn lượt ---------------------------
+@router.delete("/{run_id}/resources", status_code=204)
+async def finish_run(
+    run_id: UUID, service: Annotated[RunService, Depends(get_service)]
+) -> Response:
+    """Thu hồi worker/snapshot/frame cache và JSON của lượt, giữ nguyên dữ liệu thư viện."""
+    await service.finish(str(run_id))
+    return Response(status_code=204)
+
+
 # ------------------------------ Ảnh lượt chạy --------------------------------
-@router.get("/{run_id}/preview")
+@router.get("/{run_id}/preview", response_model=None)
 def preview(
     run_id: UUID, service: Annotated[RunService, Depends(get_service)]
-) -> FileResponse:
+) -> FileResponse | Response:
     """Trả preview gốc hoặc JPEG sidecar để canvas vẽ kết quả theo cùng chiều ảnh."""
+    if service.get(str(run_id)).source_kind == "webcam":
+        return Response(
+            service.webcam_frame(str(run_id)),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "no-store"},
+        )
     return FileResponse(
         service.content(str(run_id)), headers={"Cache-Control": "no-store"}
     )

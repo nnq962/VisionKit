@@ -10,6 +10,7 @@ export type VisionSource = {
   file?: File;
   mediaStream?: MediaStream;
   deviceId?: string;
+  deviceIndex?: number;
   previewUrl?: string;
   thumbnailUrl?: string;
   previewBlob?: Blob;
@@ -22,6 +23,7 @@ export type VisionSource = {
   error?: string;
   saved?: boolean;
   streamPreview?: boolean;
+  youtubeSession?: string;
   createdAt?: string;
   updatedAt?: string;
   originalFilename?: string;
@@ -52,7 +54,7 @@ export const sourceKinds: { value: SourceKind; label: string; hint: string }[] =
     {
       value: "webcam",
       label: "Webcam / USB",
-      hint: "Mở webcam hoặc camera USB ngay trên trình duyệt",
+      hint: "Webcam / USB trên máy chạy AI · mặc định ID 0",
     },
     {
       value: "screen",

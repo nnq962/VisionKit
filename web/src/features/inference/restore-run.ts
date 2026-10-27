@@ -6,6 +6,6 @@ export async function restoreRun<T extends { status: string }>(
 ): Promise<T | null> {
   const run = await load();
   if (signal.aborted) return null;
-  if (sourceKind === "video" && run.status !== "queued" && run.status !== "running") return null;
+  if (["video", "youtube"].includes(sourceKind ?? "") && run.status !== "queued" && run.status !== "running") return null;
   return run;
 }

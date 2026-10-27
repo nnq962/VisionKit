@@ -12,6 +12,7 @@ export function RunStep({
   sourceKind,
   modelRecord,
   sourceRecord,
+  onComplete,
 }: {
   source: string;
   model: string;
@@ -19,6 +20,7 @@ export function RunStep({
   sourceKind?: SourceKind;
   modelRecord: StoredModel | null;
   sourceRecord: VisionSource | null;
+  onComplete: () => Promise<void>;
 }) {
   const classify = modelRecord?.task === "classify";
   const names = modelRecord?.inspection.metadata?.names ?? {};
@@ -28,7 +30,7 @@ export function RunStep({
     ...(!classify
       ? [["Confidence / IoU", `${parameters.confidence} / ${parameters.iou}`]]
       : []),
-    ...(sourceKind === "stream" ? [["Giới hạn AI", `${parameters.liveFps} FPS`], ["Giới hạn chạy", `${parameters.liveMinutes} phút`]] : []),
+    ...(sourceKind && ["stream", "webcam"].includes(sourceKind) ? [["Giới hạn AI", `${parameters.liveFps} FPS`], ["Giới hạn chạy", `${parameters.liveMinutes} phút`]] : []),
     ["Kích thước đầu vào", imageSizeLabel(parameters.imageSize)],
     ["Thiết bị", deviceLabels[parameters.device]],
     [
@@ -54,6 +56,7 @@ export function RunStep({
         source={sourceRecord}
         model={modelRecord}
         parameters={parameters}
+        onComplete={onComplete}
       />
       <details className="group border-t pt-6">
         <summary className="cursor-pointer text-sm font-semibold">

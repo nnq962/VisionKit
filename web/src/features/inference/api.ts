@@ -12,7 +12,7 @@ export type InferenceResult = DetectionFrame & {
 export type InferenceRun = {
   id: string;
   model_id: string;
-  source_kind?: "image" | "screen" | "video" | "stream";
+  source_kind?: "image" | "screen" | "video" | "stream" | "webcam";
   progress?: {
     frames_processed: number;
     frame_index: number;
@@ -51,9 +51,30 @@ export async function startRun(
   parameters: YoloParameters,
   signal: AbortSignal,
 ) {
-  if (!["image", "screen", "video", "stream"].includes(source.kind))
+  if (!["image", "screen", "video", "stream", "youtube", "webcam"].includes(source.kind))
     throw new Error("Hiện hỗ trợ ảnh, ảnh màn hình, video file và RTSP.");
   const dimensions = parameters.imageSize.split("x").map(Number);
+  if (source.kind === "webcam") {
+    if (source.status !== "ready" || source.deviceIndex === undefined) throw new Error("Kiểm tra webcam máy AI trước khi chạy.");
+    return request("/webcam", { method: "POST", headers: { "Content-Type": "application/json" }, signal,
+      body: JSON.stringify({ model_id: modelId, device_index: source.deviceIndex, duration_seconds: Number(parameters.liveMinutes) * 60,
+        options: { conf: Number(parameters.confidence), iou: Number(parameters.iou), imgsz: [dimensions[0], dimensions[1] ?? dimensions[0]], device: parameters.device, classes: parameters.classMode === "all" ? null : parameters.classes.map(Number), max_det: Number(parameters.maxDet), agnostic_nms: parameters.agnosticNms, vid_stride: Number(parameters.vidStride), max_fps: Number(parameters.liveFps) },
+      }),
+    });
+  }
+  if (source.kind === "youtube") {
+    if (!source.youtubeSession || source.status !== "ready") throw new Error("Chuẩn bị video YouTube trước khi chạy AI.");
+    return request("/youtube", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal,
+      body: JSON.stringify({ model_id: modelId, session_id: source.youtubeSession, options: {
+        conf: Number(parameters.confidence), iou: Number(parameters.iou),
+        imgsz: [dimensions[0], dimensions[1] ?? dimensions[0]], device: parameters.device,
+        classes: parameters.classMode === "all" ? null : parameters.classes.map(Number),
+        max_det: Number(parameters.maxDet), agnostic_nms: parameters.agnosticNms,
+        vid_stride: Number(parameters.vidStride),
+      }}),
+    });
+  }
   if (source.kind === "stream") {
     if (!source.saved && !source.streamPreview) throw new Error("Kiểm tra RTSP trước khi chạy AI.");
     return request("/live", {
@@ -107,4 +128,9 @@ export function eventsUrl(id: string) {
   );
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();
+}
+
+export async function finishRun(id: string) {
+  const response = await fetch(`${base}/${encodeURIComponent(id)}/resources`, { method: "DELETE" });
+  if (!response.ok) throw new Error("Chưa dọn được tài nguyên lượt chạy. Bấm Hoàn thành để thử lại.");
 }

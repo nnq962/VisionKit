@@ -69,7 +69,7 @@ export function serializableDrafts(
       ? { ...draft.source, mediaStream: undefined, previewUrl: undefined }
       : null;
     if (source?.kind === "stream") source.streamPreview = false;
-    if (source?.kind === "webcam") source.status = "pending";
+    if (source?.kind === "webcam" && source.status === "loading") source.status = "pending";
     snapshot.drafts[key as SourceKind] = { ...draft, source };
   }
   return snapshot;

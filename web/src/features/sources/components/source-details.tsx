@@ -2,33 +2,10 @@
 /* eslint-disable @next/next/no-img-element */
 import { VideoStreamPreview } from "@/features/video-stream";
 import { VideoSourcePreview } from "./video-source-preview";
-import { useEffect, useRef } from "react";
 import { CameraIcon, FileImageIcon, FilmIcon, RadioIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatBytes, formatDuration } from "../media-metadata";
 import { sourceLabel, type SourceKind, type VisionSource } from "../types";
-
-function WebcamPreview({ stream }: { stream: MediaStream }) {
-  const video = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    const element = video.current;
-    if (!element) return;
-    element.srcObject = stream;
-    return () => {
-      element.srcObject = null;
-    };
-  }, [stream]);
-  return (
-    <video
-      ref={video}
-      autoPlay
-      muted
-      playsInline
-      className="size-full object-contain"
-      aria-label="Preview webcam"
-    />
-  );
-}
 
 export function SourceDetails({
   source,
@@ -55,8 +32,8 @@ export function SourceDetails({
         )}
         <dl className="divide-y text-xs">
           {[["Phát trên web", "WebRTC qua MediaMTX"], ["Khôi phục kết nối", "Tự động"], ["Khi chuyển trang", "Giữ kết nối"]].map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-4 py-3 first:pt-0 last:pb-0">
-              <dt className="text-muted-foreground">{label}</dt><dd className="text-right font-medium">{value}</dd>
+            <div key={label} className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-4 py-3">
+              <dt className="text-muted-foreground">{label}</dt><dd className="text-left font-medium">{value}</dd>
             </div>
           ))}
         </dl>
@@ -83,16 +60,14 @@ export function SourceDetails({
         )}
       </div>
       <div className="flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-muted">
-        {source?.mediaStream ? (
-          <WebcamPreview stream={source.mediaStream} />
-        ) : source?.previewUrl &&
-          (source.kind === "image" || source.kind === "screen") ? (
+        {source?.previewUrl &&
+          (["image", "screen", "webcam"].includes(source.kind)) ? (
           <img
             src={source.previewUrl}
             alt={`Xem trước ${source.name}`}
             className="size-full object-contain"
           />
-        ) : source?.previewUrl && source.kind === "video" ? (
+        ) : source?.previewUrl && ["video", "youtube"].includes(source.kind) ? (
           <VideoSourcePreview
             key={source.previewUrl}
             url={source.previewUrl}
@@ -171,10 +146,10 @@ export function SourceDetails({
             ].map(([label, value]) => (
               <div
                 key={label}
-                className="flex justify-between gap-4 py-3 first:pt-0"
+                className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-4 py-3"
               >
                 <dt className="text-muted-foreground">{label}</dt>
-                <dd className="text-right font-medium tabular-nums">{value}</dd>
+                <dd className="min-w-0 break-words text-left font-medium tabular-nums">{value}</dd>
               </div>
             ))}
           </dl>

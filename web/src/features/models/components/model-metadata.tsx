@@ -128,9 +128,9 @@ export function ModelMetadataPanel({
       {rows.length > 0 && (
         <dl className="divide-y border-t text-sm">
           {rows.map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-4 py-3">
+            <div key={label} className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-4 py-3">
               <dt className="shrink-0 text-muted-foreground">{label}</dt>
-              <dd className="min-w-0 break-all text-right font-medium">
+              <dd className="min-w-0 break-all text-left font-medium">
                 {value}
               </dd>
             </div>

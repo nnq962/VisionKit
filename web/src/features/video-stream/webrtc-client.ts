@@ -17,7 +17,7 @@ export class StreamFailure extends Error {
   }
 }
 export type StreamConnection = {
-  close: () => void;
+  close: () => void | Promise<void>;
   status: (signal: AbortSignal) => Promise<CameraStatus>;
 };
 export type StreamCallbacks = {
@@ -84,8 +84,9 @@ export async function openWebRtcStream(
   let peer: RTCPeerConnection | null = null;
   let disconnected: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
+  let closing: Promise<void> | undefined;
   const close = () => {
-    if (closed) return;
+    if (closed) return closing;
     closed = true;
     if (disconnected !== null) clearTimeout(disconnected);
     signal.removeEventListener("abort", close);
@@ -93,7 +94,8 @@ export async function openWebRtcStream(
       peer.ontrack = peer.onconnectionstatechange = null;
       peer.close();
     }
-    void fetch(endpoint, { method: "DELETE", keepalive: true }).catch(() => {});
+    closing = fetch(endpoint, { method: "DELETE", keepalive: true }).then(() => {}, () => {});
+    return closing;
   };
   signal.addEventListener("abort", close, { once: true });
   const status = async (readSignal: AbortSignal): Promise<CameraStatus> =>

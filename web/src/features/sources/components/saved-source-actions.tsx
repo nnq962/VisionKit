@@ -17,7 +17,7 @@ export function SavedSourceActions({
   const [mode, setMode] = useState<"view" | "rename" | "delete" | "configure">("view");
   const [name, setName] = useState(source.name);
   return (
-    <div className="space-y-3 px-3 pb-4">
+    <div className="space-y-4 pt-4 pb-5 text-left">
       {mode === "view" ? (
         <div className="flex flex-wrap gap-2">
           {source.kind === "stream" && <Button variant="ghost" size="sm" disabled={selection.saving} onClick={() => setMode("configure")}>
@@ -36,7 +36,7 @@ export function SavedSourceActions({
             Đổi tên
           </Button>
           <Button
-            variant="ghost"
+            variant="destructive"
             size="sm"
             onClick={() => setMode("delete")}
             disabled={selection.saving}
@@ -57,12 +57,13 @@ export function SavedSourceActions({
         />
       ) : mode === "rename" ? (
         <form
-          className="space-y-2"
+          className="space-y-4"
           onSubmit={async (event) => {
             event.preventDefault();
             if (await selection.rename(source.id, name.trim())) setMode("view");
           }}
         >
+          <div className="space-y-2">
           <Label htmlFor={`rename-${source.id}`}>Tên source mới</Label>
           <Input
             id={`rename-${source.id}`}
@@ -72,7 +73,8 @@ export function SavedSourceActions({
             disabled={selection.saving}
             autoFocus
           />
-          <div className="flex gap-2">
+          </div>
+          <div className="flex flex-wrap gap-2">
             <Button size="sm" disabled={!name.trim() || selection.saving}>
               Lưu tên
             </Button>
@@ -92,7 +94,7 @@ export function SavedSourceActions({
           <p className="text-sm text-destructive">
             {source.kind === "stream" ? "Xoá cấu hình camera này khỏi thư viện?" : "Xoá source này và file đã lưu trên máy?"}
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="destructive"
               size="sm"

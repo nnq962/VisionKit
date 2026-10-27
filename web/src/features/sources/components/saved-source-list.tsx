@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CameraIcon,
   CheckIcon,
@@ -11,17 +11,39 @@ import { SavedSourceActions } from "./saved-source-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { SourceSelection } from "../use-source-selection";
-import { sourceLabel } from "../types";
+import { useSourceLibrary } from "../use-source-library";
+import { sourceKinds, type SourceKind, sourceLabel } from "../types";
 
 export function SavedSourceList({ selection }: { selection: SourceSelection }) {
   const [search, setSearch] = useState("");
-  const items = selection.library.filter((item) =>
-    `${item.name} ${sourceLabel(item.kind)}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
+  const [kind, setKind] = useState<SourceKind | "all">("all");
+  const library = useSourceLibrary();
+  const previousLibrary = useRef(selection.library);
+  const refresh = useRef(library.refreshLibrary);
+  useEffect(() => { refresh.current = library.refreshLibrary; });
+  useEffect(() => {
+    if (previousLibrary.current !== selection.library) {
+      previousLibrary.current = selection.library;
+      void refresh.current();
+    }
+  }, [selection.library]);
+  const items = library.library;
+  const categories: { value: SourceKind | "all"; label: string }[] = [
+    { value: "all", label: "Tất cả" },
+    { value: "image", label: "Ảnh" },
+    { value: "video", label: "Video" },
+    { value: "stream", label: "Camera RTSP" },
+    { value: "screen", label: "Ảnh màn hình" },
+  ];
+  const groups = sourceKinds.map((category) => ({ ...category, items: items.filter((item) => item.kind === category.value) })).filter((group) => group.items.length);
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Phân loại source đã lưu">
+        {categories.map((category) => <Button key={category.value} size="sm" variant={kind === category.value ? "secondary" : "ghost"} aria-pressed={kind === category.value} onClick={() => {
+          setKind(category.value);
+          library.filterLibrary({ kind: category.value === "all" ? undefined : category.value, q: search.trim() });
+        }}>{category.label}</Button>)}
+      </div>
       <div className="space-y-2">
         <Label htmlFor="source-search">Tìm source đã lưu</Label>
         <div className="relative">
@@ -29,18 +51,22 @@ export function SavedSourceList({ selection }: { selection: SourceSelection }) {
           <Input
             id="source-search"
             className="h-9 pl-9"
+            maxLength={120}
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Tên source hoặc loại dữ liệu…"
+            onChange={(event) => { setSearch(event.target.value); library.filterLibrary({ kind: kind === "all" ? undefined : kind, q: event.target.value.trim() }); }}
+            placeholder="Tìm theo tên source…"
           />
         </div>
       </div>
-      <div className="divide-y" aria-label="Source đã lưu">
-        {items.map((item) => {
+      <div className="space-y-5" aria-label="Source đã lưu">
+        {groups.map((group) => <section key={group.value} aria-label={group.label} className="space-y-2">
+          <h4 className="flex items-center justify-between text-xs font-semibold text-muted-foreground"><span>{group.label}</span><span className="tabular-nums">{group.items.length}</span></h4>
+          <div className="divide-y">
+        {group.items.map((item) => {
           const Icon =
-            item.kind === "image"
+            (item.kind === "image" || item.kind === "screen")
               ? FileImageIcon
-              : item.kind === "video"
+              : (item.kind === "video" || item.kind === "youtube")
                 ? FilmIcon
                 : CameraIcon;
           const active = selection.source?.id === item.id;
@@ -70,29 +96,31 @@ export function SavedSourceList({ selection }: { selection: SourceSelection }) {
             </div>
           );
         })}
+          </div>
+        </section>)}
         {!items.length &&
-          !selection.libraryLoading &&
-          !selection.libraryError && (
+          !library.libraryLoading &&
+          !library.libraryError && (
             <p className="py-10 text-center text-sm text-muted-foreground">
               {search
                 ? "Không tìm thấy source. Thử tên khác."
-                : "Chưa có source đã lưu. Thêm source mới để bắt đầu."}
+                : kind !== "all" ? "Chưa có source thuộc loại này." : "Chưa có source đã lưu. Thêm source mới để bắt đầu."}
             </p>
           )}
       </div>
-      {selection.libraryLoading && (
+      {library.libraryLoading && (
         <p role="status" className="text-sm text-muted-foreground">
           Đang tải thư viện…
         </p>
       )}
-      {selection.libraryError && (
+      {library.libraryError && (
         <div className="space-y-2">
           <p role="alert" className="text-sm text-destructive">
-            {selection.libraryError}
+            {library.libraryError}
           </p>
           <Button
             variant="outline"
-            onClick={() => void selection.refreshLibrary()}
+            onClick={() => void library.refreshLibrary()}
           >
             Thử lại
           </Button>
@@ -100,14 +128,14 @@ export function SavedSourceList({ selection }: { selection: SourceSelection }) {
       )}
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-xs text-muted-foreground">
-          Đã tải {selection.library.length}/{selection.libraryTotal} source.
+          Đã tải {library.library.length}/{library.libraryTotal} source.
         </p>
-        {selection.library.length < selection.libraryTotal && (
+        {library.library.length < library.libraryTotal && (
           <Button
             variant="outline"
             size="sm"
-            disabled={selection.libraryLoading}
-            onClick={() => void selection.refreshLibrary(true)}
+            disabled={library.libraryLoading}
+            onClick={() => void library.refreshLibrary(true)}
           >
             Tải thêm
           </Button>
@@ -115,8 +143,8 @@ export function SavedSourceList({ selection }: { selection: SourceSelection }) {
         <Button
           variant="ghost"
           size="sm"
-          disabled={selection.libraryLoading || selection.saving}
-          onClick={() => void selection.refreshLibrary()}
+          disabled={library.libraryLoading || selection.saving}
+          onClick={() => void library.refreshLibrary()}
         >
           Làm mới
         </Button>

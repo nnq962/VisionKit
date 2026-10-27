@@ -48,3 +48,18 @@ test('first temporary check times out without retrying endlessly; established li
  const g=fixture();g.store.startTemporary('draft','rtsp://camera/live');await flush();g.play();
  g.connections[0].callbacks.error(new StreamFailure('Lost'));await g.tick(1000);assert.equal(g.connections.length,2);g.store.dispose();
 });
+
+test('finishing a pipeline can await server viewer cleanup after stopping local transport', async () => {
+ const f=fixture();
+ f.store.start('cam');await flush();f.play();
+ let release;
+ const closing=new Promise(resolve=>{release=resolve});
+ f.connections[0].close=function(){this.closed=true;return closing};
+ let complete=false;
+ const stopped=Promise.resolve(f.store.stop('cam')).then(()=>{complete=true});
+ assert.equal(f.connections[0].closed,true);
+ assert.equal(f.store.snapshot('cam').status,'stopped');
+ await flush();assert.equal(complete,false);
+ release();await stopped;assert.equal(complete,true);
+ assert.equal(f.timers.size,0);
+});

@@ -8,6 +8,7 @@ import {
   type SourceDraft,
   type DraftSnapshot,
 } from "./draft-storage";
+import { youtubePreview } from "./youtube-api";
 import { sourceKinds, type SourceKind, type VisionSource } from "./types";
 
 type Picker = DraftSnapshot & {
@@ -64,6 +65,14 @@ export function useSourceDrafts() {
               source.status = "error";
               source.error =
                 "Tệp được giữ lại nhưng chưa đọc xong. Bấm Đọc lại tệp để tiếp tục.";
+            }
+            if (source?.kind === "youtube" && source.youtubeSession) {
+              source.previewUrl = youtubePreview(source.youtubeSession);
+              source.status = "loading";
+            }
+            if (source?.kind === "youtube" && !source.youtubeSession) {
+              source.status = "error";
+              source.error = "Phiên chuẩn bị đã gián đoạn. Bấm Chuẩn bị video để thử lại.";
             }
             const preview = source?.previewBlob ?? source?.file;
             if (source && preview && source.status === "ready") {
@@ -215,6 +224,16 @@ export function useSourceDrafts() {
     }));
   }
 
+  function finishSelection(id: string) {
+    commit((state) => {
+      const drafts = { ...state.drafts };
+      for (const kind of Object.keys(drafts) as SourceKind[]) {
+        if (drafts[kind]?.source?.id === id) drafts[kind] = emptyDraft();
+      }
+      return { ...state, drafts, selected: state.selected?.id === id ? null : state.selected };
+    });
+  }
+
   return {
     source,
     draftsReady: hydrated,
@@ -229,6 +248,7 @@ export function useSourceDrafts() {
     publish,
     applySaved,
     discardDraft,
+    finishSelection,
     resumeDraft: () =>
       commit((state) => {
         const hasDraft = (draft?: SourceDraft) =>

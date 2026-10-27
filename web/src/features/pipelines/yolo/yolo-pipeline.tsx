@@ -40,6 +40,21 @@ export function YoloPipeline() {
     if (!message) setStep((current) => Math.min(current + 1, steps.length - 1));
   }
 
+  async function complete() {
+    const resetSource = await selection.finishCurrent();
+    const resetModel = await modelSelection.finishTemporary();
+    resetSource();
+    resetModel();
+    setError("");
+    setErrorSourceId(null);
+    setStep(0);
+    requestAnimationFrame(() => {
+      const heading = document.getElementById("step-heading");
+      heading?.setAttribute("tabindex", "-1");
+      heading?.focus();
+    });
+  }
+
   return (
     <WorkspacePage
       title="YOLO pipeline"
@@ -131,6 +146,7 @@ export function YoloPipeline() {
             sourceKind={selection.source?.kind}
             modelRecord={model}
             sourceRecord={selection.source}
+            onComplete={complete}
           />
         )}
         {error &&

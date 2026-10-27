@@ -24,6 +24,7 @@ from app.modules.runs.service import RunService
 from app.modules.sources.repository import SourceRepository
 from app.modules.sources.service import SourceService
 from app.modules.streams.service import PreviewService
+from app.modules.youtube.service import YoutubeService
 from app.storage.local import LocalStorage
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cleanup.push_async_callback(application.state.streams.shutdown)
             streams_task = asyncio.create_task(application.state.streams.maintain())
             cleanup.push_async_callback(cancel_background_task, streams_task)
+            application.state.youtube = YoutubeService(config)
+            cleanup.push_async_callback(application.state.youtube.shutdown)
+            youtube_task = asyncio.create_task(application.state.youtube.maintain())
+            cleanup.push_async_callback(cancel_background_task, youtube_task)
             application.state.models = ModelService(ModelRepository(database), config)
             cleanup.push_async_callback(application.state.models.shutdown)
             await application.state.models.cleanup_temporary()

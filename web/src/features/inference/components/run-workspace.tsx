@@ -1,5 +1,5 @@
 "use client";
-import { DownloadIcon, PlayIcon, SquareIcon } from "lucide-react";
+import { CheckIcon, DownloadIcon, PlayIcon, SquareIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OverlayControls } from "./overlay-controls";
 import { useOverlayPreferences } from "../use-overlay-preferences";
@@ -11,25 +11,29 @@ import { useInferenceRun } from "../use-inference-run";
 import { VideoRunPreview } from "./video-run-preview";
 import { runPreview } from "../api";
 import { LiveRunPreview } from "./live-run-preview";
+import { WebcamRunPreview } from "./webcam-run-preview";
 import { RunMetrics } from "./run-metrics";
 
 function RunWorkspaceContent({
   source,
   model,
   parameters,
+  onComplete,
 }: {
   source: VisionSource | null;
   model: StoredModel | null;
   parameters: YoloParameters;
+  onComplete: () => Promise<void>;
 }) {
   const inference = useInferenceRun(source, model?.id ?? null, parameters);
   const { run } = inference;
   const { preferences, update: updateOverlay } = useOverlayPreferences();
   const supported = Boolean(
-    source && ["image", "screen", "video", "stream"].includes(source.kind),
+    source && ["image", "screen", "video", "stream", "youtube", "webcam"].includes(source.kind),
   );
-  const video = source?.kind === "video";
-  const live = source?.kind === "stream";
+  const video = source?.kind === "video" || source?.kind === "youtube";
+  const webcam = source?.kind === "webcam";
+  const live = source?.kind === "stream" || webcam;
   const temporal = video || live;
   const result = temporal
     ? (run?.result ?? null)
@@ -51,7 +55,7 @@ function RunWorkspaceContent({
     showSkeleton: preferences.skeleton,
     skeleton: canConnect ? COCO_POSE_SKELETON : [],
   };
-  const src = live ? undefined : run ? runPreview(run.id) : source?.previewUrl;
+  const src = webcam ? (run?.result ? `${runPreview(run.id)}?frame=${run.result.frameId ?? 0}` : source?.previewUrl) : live ? undefined : run ? runPreview(run.id) : source?.previewUrl;
   const status = inference.starting
     ? live ? "Đang khởi tạo AI cho camera…" : video
       ? "Đang gửi video…"
@@ -101,15 +105,21 @@ function RunWorkspaceContent({
             </Button>
           ) : (
             <Button
-              disabled={!supported || !model || inference.starting}
+              disabled={!supported || !model || inference.starting || inference.finishing}
+              variant={run ? "outline" : "default"}
               onClick={() => void inference.start()}
             >
               <PlayIcon />
               {run ? "Chạy lại" : "Chạy pipeline"}
             </Button>
           )}
+          {run && !inference.active && (
+            <Button title="Dọn dữ liệu tạm và quay lại bước 1" disabled={inference.finishing || inference.starting} onClick={() => void inference.finish(onComplete)}>
+              <CheckIcon />{inference.finishing ? "Đang dọn dẹp…" : "Hoàn thành"}
+            </Button>
+          )}
           {result && (
-            <Button variant="outline" onClick={download}>
+            <Button variant="outline" disabled={inference.finishing} onClick={download}>
               <DownloadIcon />
               {temporal ? "JSON frame cuối" : "JSON"}
             </Button>
@@ -162,7 +172,9 @@ function RunWorkspaceContent({
       )}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-3">
-          {live && source ? (
+          {webcam ? (
+            <WebcamRunPreview key={source?.id} src={src ?? ""} name={`Webcam ${source?.deviceIndex ?? 0} trên máy AI`} result={result} options={overlayOptions} active={inference.active} />
+          ) : live && source ? (
             <LiveRunPreview sourceId={source.id} name={source.name} result={inference.active ? result : null} options={overlayOptions} />
           ) : src && supported && video ? (
             <VideoRunPreview
@@ -190,7 +202,7 @@ function RunWorkspaceContent({
           )}
           {video && (
             <p className="text-xs leading-5 text-muted-foreground">
-              BBox theo kết quả mới nhất, có thể lệch nhẹ video.
+              {source?.kind === "youtube" ? "AI xử lý từ đầu video. " : ""}BBox theo kết quả mới nhất, có thể lệch nhẹ video.
             </p>
           )}
         </div>

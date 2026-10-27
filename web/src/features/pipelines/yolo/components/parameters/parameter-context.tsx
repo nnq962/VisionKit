@@ -48,10 +48,10 @@ export function ParameterContext({
         {rows.map(([label, value]) => (
           <div
             key={label}
-            className="flex justify-between gap-4 py-3 first:pt-0"
+            className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-4 py-3 first:pt-0"
           >
             <dt className="shrink-0 text-muted-foreground">{label}</dt>
-            <dd className="min-w-0 break-words text-right font-medium">
+            <dd className="min-w-0 break-words text-left font-medium">
               {value}
             </dd>
           </div>

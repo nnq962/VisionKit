@@ -256,3 +256,11 @@ export async function saveTemporaryModel(id: string, name: string) {
     }),
   );
 }
+
+/** Cleanup retry succeeds when a temporary model was already deleted. */
+export async function releaseTemporaryModel(id: string) {
+  const response = await fetch(`${base}/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (response.ok || response.status === 404 || response.status === 410) return;
+  const body = await response.json().catch(() => null);
+  throw new Error(typeof body?.detail === "string" ? body.detail : "Chưa dọn được model tạm. Bấm Hoàn thành để thử lại.");
+}

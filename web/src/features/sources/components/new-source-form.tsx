@@ -55,7 +55,7 @@ export function NewSourceForm({
       setError("Nhập URL video YouTube hợp lệ.");
       return;
     }
-    selection.selectYoutube(value);
+    void selection.selectYoutube(value);
   }
 
   return (
@@ -188,7 +188,7 @@ export function NewSourceForm({
             inputMode="url"
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            Chưa hỗ trợ kiểm tra kết nối.
+            Video thường · tối đa 720p, 200 MiB · bản tạm tự hết hạn.
           </p>
           <Button
             type="button"
@@ -196,8 +196,16 @@ export function NewSourceForm({
             className="mt-2"
             onClick={useYoutubeLocation}
           >
-            Dùng source này
+            {selection.source?.status === "loading" ? "Chuẩn bị lại video" : "Chuẩn bị video"}
           </Button>
+          {selection.source?.kind === "youtube" && (
+            <div className="space-y-2 pt-2">
+              {selection.source.status === "loading" && <p role="status" className="text-sm text-muted-foreground">Đang chuẩn bị video YouTube…</p>}
+              {selection.source.status === "ready" && <p role="status" className="text-sm text-muted-foreground">Video sẵn sàng. Có thể xem, tua và tiếp tục chạy AI.</p>}
+              {selection.source.error && <p role="alert" className="text-sm text-destructive">{selection.source.error}</p>}
+              <Button variant="destructive" onClick={() => void selection.discardYoutube()}>{selection.source.status === "loading" ? "Huỷ chuẩn bị" : "Xoá video tạm"}</Button>
+            </div>
+          )}
         </div>
       )}
       {error && (

@@ -35,7 +35,7 @@ class RunRecord(BaseModel):
 
     id: str
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
-    source_kind: Literal["image", "screen", "video", "stream"] = "image"
+    source_kind: Literal["image", "screen", "video", "stream", "webcam"] = "image"
     progress: dict[str, Any] | None = None
     model_id: str
     source_location: str
@@ -77,3 +77,30 @@ class LiveRunCreate(BaseModel):
         if (self.source_id is None) == (self.preview_id is None):
             raise ValueError("Chọn đúng một camera hoặc preview.")
         return self
+
+
+# -------------------------- Chạy video YouTube tạm ----------------------------
+class YoutubeRunCreate(BaseModel):
+    """Chọn video đã chuẩn bị để snapshot và tái sử dụng inference video local."""
+
+    model_config = ConfigDict(extra="forbid")
+    model_id: str = Field(min_length=1, max_length=255)
+    session_id: UUID
+    options: RunOptions = Field(default_factory=RunOptions)
+
+
+# ------------------------- Webcam local và lượt chạy --------------------------
+class WebcamCheckRequest(BaseModel):
+    """Chỉ kiểm index camera trên máy AI, không chấp nhận đường dẫn hoặc URL."""
+
+    model_config = ConfigDict(extra="forbid")
+    device_index: int = Field(default=0, ge=0, le=15, strict=True)
+
+
+# ----------------------------- Chạy webcam local -----------------------------
+class WebcamRunCreate(WebcamCheckRequest):
+    """Nhận model và thông số live cho webcam local; mặc định camera 0."""
+
+    model_id: str = Field(min_length=1, max_length=255)
+    options: RunOptions = Field(default_factory=RunOptions)
+    duration_seconds: int = Field(default=3600, ge=1, le=14400, strict=True)

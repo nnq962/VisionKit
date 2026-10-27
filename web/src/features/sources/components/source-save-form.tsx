@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import type { SourceSelection } from "../use-source-selection";
 
 export function SourceSaveForm({ selection }: { selection: SourceSelection }) {
-  if (selection.kind === "stream") return null;
+  if (["stream", "youtube", "webcam"].includes(selection.kind)) return null;
   const canSave =
     selection.source &&
     ["image", "screen", "video"].includes(selection.source.kind) &&

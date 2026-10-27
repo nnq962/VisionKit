@@ -96,8 +96,9 @@ export class VideoStreamStore {
     entry.timer = entry.deadline = null;
     entry.controller?.abort();
     entry.controller = null;
-    entry.connection?.close();
+    const closing = entry.connection?.close();
     entry.connection = null;
+    return closing;
   }
   private fail(id: string, entry: Entry, error: unknown) {
     if (!entry.enabled) return;
@@ -166,8 +167,9 @@ export class VideoStreamStore {
     const entry = this.entries.get(id);
     if (!entry) return;
     entry.enabled = false;
-    this.clearTransport(entry);
+    const closing = this.clearTransport(entry);
     this.publish(entry, { ...EMPTY_STREAM, status: "stopped" });
+    return closing;
   };
   reconnect = (id: string) => { this.stop(id); this.start(id); };
   configurationChanged = (id: string) => {

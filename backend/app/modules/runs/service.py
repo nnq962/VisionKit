@@ -1,6 +1,7 @@
 """Điều phối lượt inference ảnh; backend quản lý file/DB và gọi AI qua HTTP."""
 
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -60,6 +61,7 @@ class RunService:
         self.tasks: dict[str, asyncio.Task] = {}
         self.pinned: dict[str, str] = {}
         self.latest: dict[str, RunRecord] = {}
+        self.webcam_frames: dict[str, bytes] = {}
         self.semaphore = asyncio.Semaphore(1)
         self.repository.interrupt()
         self.cleanup_task: asyncio.Task | None = None
@@ -101,6 +103,35 @@ class RunService:
             for path in self.storage.source_paths(location, metadata):
                 path.unlink(missing_ok=True)
             raise
+
+    async def create_webcam(
+        self,
+        model_id: str,
+        options: RunOptions,
+        device_index: int,
+        duration_seconds: int,
+    ) -> RunRecord:
+        """Giữ một lượt mỗi index webcam; AI tự đọc local, không giữ URL/file nguồn."""
+        return await self._enqueue(
+            model_id,
+            options,
+            "",
+            {
+                "device_index": device_index,
+                "is_live": True,
+                "duration_seconds": duration_seconds,
+            },
+            "webcam",
+            duration_seconds=duration_seconds,
+        )
+
+    def webcam_frame(self, run_id: str) -> bytes:
+        """Trả JPEG mới nhất trong RAM, tối đa bốn frame; không đưa ảnh vào JSON/DB/WebSocket."""
+        self.get(run_id)
+        frame = self.webcam_frames.get(run_id)
+        if frame is None:
+            raise SourceError(404, "Webcam chưa có frame xem trước.")
+        return frame
 
     async def create_live(
         self,
@@ -184,6 +215,15 @@ class RunService:
         async with self.models.lock:
             if len(self.tasks) >= 4:
                 raise SourceError(429, "Hàng chờ chạy đã đầy.")
+            if kind == "webcam" and any(
+                self.get(rid).source_kind == "webcam"
+                and self.get(rid).source_metadata.get("device_index")
+                == metadata["device_index"]
+                for rid in self.tasks
+            ):
+                raise SourceError(
+                    409, "Webcam này đang chạy AI. Dừng lượt hiện tại trước."
+                )
             model = self.models.available(model_id)
             if model.inspection.status not in {"ready", "manual"}:
                 raise SourceError(409, "Đọc metadata model trước khi chạy.")
@@ -249,7 +289,7 @@ class RunService:
             async with self.semaphore:
                 logger.info("Bắt đầu xử lý %s.", record.source_kind)
                 self.repository.save(record.model_copy(update={"status": "running"}))
-                if record.source_kind in {"video", "stream"}:
+                if record.source_kind in {"video", "stream", "webcam"}:
                     await self._video(
                         record,
                         model,
@@ -339,6 +379,14 @@ class RunService:
             payload.pop("source_location")
             payload.pop("source_sha256")
             payload.update(stream_url=stream_url, duration_seconds=duration_seconds)
+        if record.source_kind == "webcam":
+            endpoint = "webcam"
+            payload.pop("source_location")
+            payload.pop("source_sha256")
+            payload.update(
+                device_index=record.source_metadata["device_index"],
+                duration_seconds=duration_seconds,
+            )
         last_write = 0.0
         last_log = time.monotonic()
         completed = False
@@ -364,6 +412,18 @@ class RunService:
                     )
                 if event.get("type") not in {"frame", "completed"}:
                     raise SourceError(502, "Sự kiện AI không hợp lệ.")
+                if record.source_kind == "webcam" and event.get("preview_jpeg"):
+                    encoded = event.pop("preview_jpeg")
+                    if not isinstance(encoded, str) or len(encoded) > 3 * 1024 * 1024:
+                        raise SourceError(502, "Ảnh webcam vượt giới hạn.")
+                    frame = base64.b64decode(encoded, validate=True)
+                    if len(frame) > 2 * 1024 * 1024 or not frame.startswith(
+                        b"\xff\xd8"
+                    ):
+                        raise SourceError(502, "Ảnh webcam không hợp lệ.")
+                    self.webcam_frames[record.id] = frame
+                    while len(self.webcam_frames) > 4:
+                        self.webcam_frames.pop(next(iter(self.webcam_frames)))
                 result = event.get("result")
                 if (
                     not isinstance(result, dict)
@@ -374,7 +434,7 @@ class RunService:
                 completed = event["type"] == "completed"
                 if (
                     completed
-                    and record.source_kind == "stream"
+                    and record.source_kind in {"stream", "webcam"}
                     and event.get("reason") != "duration_limit"
                 ):
                     raise SourceError(502, "Stream kết thúc thiếu lý do hợp lệ.")
@@ -384,7 +444,7 @@ class RunService:
                         "result": result,
                         "progress": event.get("progress"),
                         "completion_reason": "duration_limit"
-                        if completed and record.source_kind == "stream"
+                        if completed and record.source_kind in {"stream", "webcam"}
                         else None,
                         "updated_at": timestamp(),
                     }
@@ -443,10 +503,32 @@ class RunService:
             await asyncio.gather(*tuple(self.release_tasks), return_exceptions=True)
         return self.get(record.id)
 
+    async def finish(self, run_id: str) -> None:
+        """Huỷ/đợi worker rồi xoá tài nguyên tạm của lượt; không chạm source/model thư viện.
+
+        Idempotent để frontend thử lại khi request cleanup bị gián đoạn. Chỉ xoá
+        snapshot của run, frame webcam trong RAM và JSON; model lease đã nhả khi cancel.
+        """
+        record = self.repository.get(run_id)
+        if record is None:
+            return
+        if run_id in self.tasks:
+            await self.cancel(run_id)
+        elif self.release_tasks:
+            await asyncio.gather(*tuple(self.release_tasks), return_exceptions=True)
+        if record.source_kind not in {"stream", "webcam"}:
+            for path in self.storage.source_paths(
+                record.source_location, record.source_metadata
+            ):
+                path.unlink(missing_ok=True)
+        self.webcam_frames.pop(run_id, None)
+        self.latest.pop(run_id, None)
+        self.repository.delete(run_id)
+
     def content(self, run_id: str) -> Path:
         """Trả ảnh preview phù hợp trình duyệt trong storage riêng của lượt chạy."""
         record = self.get(run_id)
-        if record.source_kind == "stream":
+        if record.source_kind in {"stream", "webcam"}:
             raise SourceError(404, "Stream chưa có preview trên trình duyệt.")
         location = (
             record.source_location
@@ -461,11 +543,12 @@ class RunService:
     def cleanup_expired(self) -> None:
         """Xoá ảnh snapshot và JSON kết quả terminal hết hạn 24 giờ; không chạm source thư viện."""
         for record in self.repository.expired():
-            if record.source_kind != "stream":
+            if record.source_kind not in {"stream", "webcam"}:
                 for path in self.storage.source_paths(
                     record.source_location, record.source_metadata
                 ):
                     path.unlink(missing_ok=True)
+            self.webcam_frames.pop(record.id, None)
             self.repository.delete(record.id)
 
     async def maintain(self) -> None:
@@ -488,4 +571,5 @@ class RunService:
         await asyncio.gather(*tasks, return_exceptions=True)
         if self.release_tasks:
             await asyncio.gather(*tuple(self.release_tasks), return_exceptions=True)
+        self.webcam_frames.clear()
         await self.client.aclose()

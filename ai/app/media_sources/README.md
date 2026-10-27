@@ -14,7 +14,7 @@ thư mục clone ở root.
 
 Ảnh/video của API hiện tại đã dùng reader này. Image/video HTTP vẫn chỉ nhận
 file trong storage đã xác minh. RTSP có endpoint nội bộ riêng `/api/v1/inference/stream`, chỉ backend gọi bằng source đã lưu;
-frontend live chưa được nối. Webcam/YouTube vẫn chỉ có reader Python nội bộ.
+frontend RTSP dùng MediaMTX/WebRTC. Webcam local đã nối inference trực tiếp theo ID; YouTube video dùng cache file backend.
 Webcam id là thiết bị trên máy AI, không phải webcam của trình duyệt.
 
 ## Cách dùng
@@ -96,7 +96,7 @@ uv sync --locked --extra youtube
 Resolve một video, giới hạn socket/retry, không tải playlist; live dùng
 latest-frame, VOD dùng tuần tự. Không trộn live và VOD cùng batch. Signed URL
 hết hạn/mất kết nối chưa được tự resolve lại. RTSP đã có endpoint AI nội bộ riêng
-(xem README AI); YouTube/webcam vẫn chưa được bật qua API inference của VisionKit.
+(xem README AI); webcam đã có API inference riêng; YouTube video được backend chuẩn bị thành file local.
 
 Module chỉ dùng logger `app.media_sources`, không gọi `dictConfig`, không
 cài handler khi import. Worker cấu hình log ra stderr, collector hiện tại thu

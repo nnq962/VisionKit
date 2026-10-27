@@ -48,3 +48,23 @@ class StreamPredictRequest(ModelPredictRequest):
         payload = self.model_dump(mode="json")
         payload["stream_url"] = self.stream_url.get_secret_value()
         return json.dumps(payload, allow_nan=False).encode()
+
+
+# ----------------------- Yêu cầu webcam trên máy AI ---------------------------
+class WebcamCheckRequest(BaseModel):
+    """Chỉ nhận index thiết bị local, không nhận URL/path từ trình duyệt."""
+
+    model_config = ConfigDict(extra="forbid")
+    device_index: int = Field(default=0, ge=0, le=15, strict=True)
+
+
+# ------------------------- Suy luận webcam trực tiếp --------------------------
+class WebcamPredictRequest(ModelPredictRequest):
+    """YOLO đọc camera local theo index; preview giới hạn theo nhịp suy luận."""
+
+    device_index: int = Field(default=0, ge=0, le=15, strict=True)
+    duration_seconds: int = Field(default=3600, ge=1, le=14400, strict=True)
+
+    def worker_payload(self) -> bytes:
+        """Xuất JSON cho worker local, không có đường dẫn camera tuỳ ý."""
+        return self.model_dump_json().encode()

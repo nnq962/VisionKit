@@ -45,7 +45,7 @@ npm run build
 
 Run the backend on port 8000 before using the persistent library. Next.js proxies `/api/v1/*` to `http://127.0.0.1:8000`; set `VISIONKIT_API_URL` in the web server environment to use another backend address. Restart Next.js after changing its configuration/environment.
 
-Images and one-shot screen captures preview locally first. Selecting “Lưu source để tái sử dụng” uploads the actual file and persists metadata; the saved library survives page reloads. It supports previews, rename, confirmed deletion and loading additional pages. Search filters currently loaded entries. Video files also support persistent upload and inference. Webcam and remote-source inference remain future integrations.
+Images and one-shot screen captures preview locally first. Selecting “Lưu source để tái sử dụng” uploads the actual file and persists metadata; the saved library survives page reloads. It supports previews, rename, confirmed deletion and loading additional pages. Search filters currently loaded entries. Video files also support persistent upload and inference. RTSP, YouTube video and local webcam inference are documented below.
 
 `src/features/sources/api.ts` owns the HTTP contract. The reusable source module handles metadata, browser capture and library state; the four YOLO step components remain separate. The UI reports API errors and retries without falling back to sample data.
 
@@ -55,7 +55,7 @@ HEIC/HEIF files use the backend's transient `/api/v1/sources/inspect` endpoint f
 
 `SourceProvider` lives in the shared workspace layout so changing routes does not destroy the current source picker state. `use-source-drafts.ts` keeps independent drafts for each source type, including the original File, HEIC preview Blob, URL text, display name and save preference. Selecting an existing library source does not replace a new-source draft.
 
-Draft files and metadata are saved locally in IndexedDB (`visionkit-source-drafts`), not automatically uploaded to the saved library. Blob preview URLs are reconstructed after reload. A draft remains local to this browser/origin and can be explicitly discarded; saving to the backend removes it from the unsaved draft cache. Browser storage is best-effort: if unavailable/full, the UI reports that drafts are only retained during in-app navigation and warns before leaving/reloading. Files interrupted during metadata reading are retained with a retry action. Browser webcam/screen MediaStreams are never persisted; webcam capture stops when leaving the pipeline route. RTSP WebRTC connections are owned by the root provider and remain connected across routes until explicitly stopped.
+Draft files and metadata are saved locally in IndexedDB (`visionkit-source-drafts`), not automatically uploaded to the saved library. Blob preview URLs are reconstructed after reload. A draft remains local to this browser/origin and can be explicitly discarded; saving to the backend removes it from the unsaved draft cache. Browser storage is best-effort: if unavailable/full, the UI reports that drafts are only retained during in-app navigation and warns before leaving/reloading. Files interrupted during metadata reading are retained with a retry action. Screen MediaStreams are never persisted. Webcam capture belongs to the AI worker on the server; the browser does not call getUserMedia. RTSP WebRTC connections are owned by the root provider and remain connected across routes until explicitly stopped.
 
 ## Model Hub
 
@@ -85,7 +85,7 @@ The Parameters step composes inference controls, a searchable metadata-driven cl
 
 ## Real image inference
 
-The Run step now starts real image/screenshot/video-file inference through `features/inference/`. It uploads unsaved original files or references saved sources, requests the selected stored/temporary model and numeric parameters, then subscribes to run WebSocket events with a GET polling fallback. Results feed the reusable canvas overlay, a detection/classification list and JSON download. The user can stop/retry and toggle annotation visibility. The latest run ID for the same source/model/options is remembered in sessionStorage for tab-local reload/navigation recovery; snapshots expire after 24 hours. A changed configuration requires a new run. RTSP inference uses the live relay flow below; webcam inference remains disabled.
+The Run step now starts real image/screenshot/video-file inference through `features/inference/`. It uploads unsaved original files or references saved sources, requests the selected stored/temporary model and numeric parameters, then subscribes to run WebSocket events with a GET polling fallback. Results feed the reusable canvas overlay, a detection/classification list and JSON download. The user can stop/retry and toggle annotation visibility. The latest run ID for the same source/model/options is remembered in sessionStorage for tab-local reload/navigation recovery; snapshots expire after 24 hours. A changed configuration requires a new run. RTSP inference uses the live relay flow below; local webcam inference is documented below.
 
 Run both backend 8000 and AI 8001; install AI dependencies with `cd ai && uv sync`. Actual device availability is validated in AI. ONNX runs on CPU in this MVP. Segmentation/OBB polygons are in downloaded JSON while preview shows bbox; pose keypoints display without guessing a custom skeleton. No inference output is mocked in product routes.
 
@@ -179,3 +179,63 @@ continues. Returning to Run with the same source/model/options restores its ID
 from sessionStorage and resumes results/Stop. Dừng AI cancels inference while
 WebRTC video keeps playing. Closing the tab does not cancel AI: it stops at the
 duration limit or explicit API cancellation. Backend restart interrupts active runs.
+
+## YouTube video source
+
+Choose YouTube, paste a single video link and select **Chuẩn bị video**. This
+creates a temporary preparation job, shows preparing/error/ready status, then
+provides native video preview with seeking. **Huỷ chuẩn bị / Xoá video tạm**
+cancels or deletes the job. Public ordinary videos are supported; Live and
+scheduled videos are rejected. Preparation uses at most 720p H.264 MP4 and the
+backend byte cap (default 200 MiB); the cache expires after an hour without use.
+
+Continue with a model and parameters to run the existing video inference flow.
+AI always starts from the beginning, independently of seeking in source preview.
+The selected job and active run survive in-app routes; reload rechecks the job,
+and an expired or restarted backend prompts preparation again. Stop/retry,
+per-frame annotations, progress and JSON download work as for local video files.
+Nothing is automatically added to the saved source library.
+
+`npm run test:youtube` checks session metadata mapping, prepared-session run
+requests and active/finished run recovery. Backend tests also cover file Range,
+cancellation/reaping, timeout, cache expiry, input validation and run snapshots.
+
+## Webcam on the AI host
+
+This feature is intended for a browser running on the same machine as the server.
+Choose Webcam / USB, enter the OpenCV device index (default 0, allowed 0–15) and
+select Kiểm tra webcam. The AI process opens one frame and releases the camera;
+the returned image is a check snapshot. Browser camera permission/device IDs are
+not used. Starting inference opens that integer device directly in the YOLO worker.
+
+The worker keeps one capture and uses the newest frame, capped by live FPS and
+duration settings. For webcam only, it also creates a JPEG from the same frame
+(maximum 960px, quality 70). Backend retains only a bounded latest-frame cache in
+RAM and serves JPEG by HTTP; run WebSocket/JSON and SQLite never contain images.
+The preview follows AI FPS, so it is a results preview rather than a separate
+full-rate video stream. MediaMTX is not involved. Navigation/reload can restore
+an active run with the same selection/options. Stop reaps the worker and releases
+the webcam; checking again should succeed. Webcam images are not persisted in drafts.
+
+Webcam startup now discards frames for approximately one second before the check
+snapshot and live inference, allowing camera exposure to settle. The webcam run
+preview keeps one canvas, decodes JPEGs offscreen and atomically paints image plus
+annotations. Slow/failed image requests retain the last good frame; pending
+updates coalesce to the newest URL instead of rebuilding the image/canvas DOM.
+
+## Completing a pipeline and source controls
+
+The Run step shows **Hoàn thành** after completion, failure or Stop. Completion
+awaits cleanup, clears the run recovery ID, releases the selected RTSP viewer or
+YouTube cache, revokes draft object URLs and clears the current source selection,
+then returns focus to step 1. Temporary uploaded models are deleted; saved source
+and model library entries and other drafts are preserved. Cleanup errors keep the
+run step visible for retry. JSON can be downloaded before completion; finishing
+removes the run snapshot/result rather than retaining it for the usual 24 hours.
+
+Saved sources have type filters and grouped headings. Type/name searches and
+pagination use the backend API, including sources beyond the first 50 entries.
+Confidence and IoU use keyboard-accessible native sliders (0–1, step 0.01) paired
+with numeric inputs for precise entry. The floating log window has a compact
+single-row title/actions header and responsive filter/search toolbar; dragging,
+resizing, pause, clear and filtering remain available.

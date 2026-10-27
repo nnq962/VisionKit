@@ -36,9 +36,13 @@ def main() -> None:
 
     try:
         from app.adapters.ultralytics.stream import predict_stream
-        from app.contracts.prediction import StreamPredictRequest
+        from app.contracts.prediction import StreamPredictRequest, WebcamPredictRequest
 
-        request = StreamPredictRequest.model_validate_json(sys.stdin.read())
+        payload = json.loads(sys.stdin.read())
+        contract = (
+            WebcamPredictRequest if "device_index" in payload else StreamPredictRequest
+        )
+        request = contract.model_validate(payload)
         model = Path(sys.argv[1])
         digest = hashlib.sha256()
         with model.open("rb") as stream:
@@ -53,7 +57,7 @@ def main() -> None:
         publish(
             {
                 "type": "error",
-                "error": "Không xử lý được RTSP. Kiểm tra model, camera và kết nối.",
+                "error": "Không đọc được camera. Kiểm tra ID, quyền camera của Python và ứng dụng đang dùng camera.",
             }
         )
     finally:

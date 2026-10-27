@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { listSources } from "./api";
-import type { VisionSource } from "./types";
+import type { SourceKind, VisionSource } from "./types";
 
 export function useSourceLibrary() {
   const [library, setLibrary] = useState<VisionSource[]>([]);
@@ -10,11 +10,12 @@ export function useSourceLibrary() {
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [libraryError, setLibraryError] = useState("");
   const libraryVersion = useRef(0);
+  const [filters, setFilters] = useState<{ kind?: SourceKind; q?: string }>({});
 
   useEffect(() => {
     const controller = new AbortController();
     const version = ++libraryVersion.current;
-    listSources(0, controller.signal)
+    listSources(0, controller.signal, filters)
       .then((page) => {
         if (version !== libraryVersion.current || controller.signal.aborted)
           return;
@@ -30,14 +31,14 @@ export function useSourceLibrary() {
           setLibraryLoading(false);
       });
     return () => controller.abort();
-  }, []);
+  }, [filters]);
 
   async function refreshLibrary(loadMore = false) {
     const version = ++libraryVersion.current;
     setLibraryLoading(true);
     setLibraryError("");
     try {
-      const page = await listSources(loadMore ? library.length : 0);
+      const page = await listSources(loadMore ? library.length : 0, undefined, filters);
       if (version !== libraryVersion.current) return;
       setLibrary((items) =>
         loadMore
@@ -81,6 +82,14 @@ export function useSourceLibrary() {
     libraryTotal,
     libraryLoading,
     libraryError,
+    filterLibrary(next: { kind?: SourceKind; q?: string }) {
+      libraryVersion.current++;
+      setLibrary([]);
+      setLibraryTotal(0);
+      setLibraryLoading(true);
+      setLibraryError("");
+      setFilters(next);
+    },
     refreshLibrary,
     remember,
     forget,

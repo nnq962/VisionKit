@@ -96,11 +96,11 @@ export function SourceDetailSheet({
         </SheetHeader>
         {source && (
           <div className="space-y-6 px-4 pb-6 md:px-6 [&_aside]:border-0 [&_aside]:p-0">
-            <div>
+            <div className="space-y-6">
               <SourceDetails source={source} />
               <StorageDetails rows={storage} />
             </div>
-            <div className="border-t pt-4">
+            <div className="border-t">
               <SavedSourceActions
                 key={source.id}
                 source={source}

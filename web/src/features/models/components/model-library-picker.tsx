@@ -75,9 +75,9 @@ export function ModelLibraryPicker({
           <legend className="sr-only">Chọn một model đã lưu</legend>
           <div className="divide-y">
             {items.slice(0, limit).map((item) => (
+              <div key={item.id} className="py-1 first:pt-0 last:pb-0">
               <label
-                key={item.id}
-                className={`flex cursor-pointer items-center gap-3 rounded-lg p-3 focus-within:ring-2 focus-within:ring-ring ${selection.selectedId === item.id ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"}`}
+                className={`flex cursor-pointer items-center gap-3 rounded-lg p-3 text-left focus-within:ring-2 focus-within:ring-ring ${selection.selectedId === item.id ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"}`}
               >
                 <input
                   className="sr-only"
@@ -93,7 +93,8 @@ export function ModelLibraryPicker({
                   strokeWidth={1.5}
                 />
                 <span className="min-w-0 flex-1 space-y-1">
-                  <span className="block truncate text-sm font-medium">
+                  <span title={item.name ?? item.filename}
+                    className="block truncate text-sm font-medium">
                     {item.name ?? item.filename}
                   </span>
                   <span className="block text-xs text-muted-foreground">
@@ -106,6 +107,7 @@ export function ModelLibraryPicker({
                   <CheckIcon className="size-4 shrink-0" />
                 )}
               </label>
+              </div>
             ))}
           </div>
         </fieldset>

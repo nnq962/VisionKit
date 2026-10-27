@@ -64,13 +64,13 @@ export function RunMetrics({
         <div
           key={metric.label}
           title={metric.title}
-          className="min-w-0 rounded-lg border bg-muted/20 p-4"
+          className="grid h-32 min-w-0 grid-rows-[1rem_1.75rem_minmax(0,1fr)] gap-y-2 overflow-hidden rounded-lg border bg-muted/20 p-4 text-left"
         >
-          <dt className="text-xs text-muted-foreground">{metric.label}</dt>
-          <dd className="mt-2 break-words text-xl font-semibold tabular-nums">
+          <dt title={metric.label} className="truncate text-xs leading-4 text-muted-foreground">{metric.label}</dt>
+          <dd title={metric.value} className="min-w-0 truncate text-xl leading-7 font-semibold tabular-nums">
             {metric.value}
           </dd>
-          <dd className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+          <dd title={metric.detail} className="line-clamp-2 min-w-0 break-words text-xs leading-4 text-muted-foreground">
             {metric.detail}
           </dd>
         </div>
