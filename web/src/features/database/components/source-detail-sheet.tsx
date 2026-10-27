@@ -96,7 +96,7 @@ export function SourceDetailSheet({
         </SheetHeader>
         {source && (
           <div className="space-y-6 px-4 pb-6 md:px-6 [&_aside]:border-0 [&_aside]:p-0">
-            <div className="space-y-6">
+            <div>
               <SourceDetails source={source} />
               <StorageDetails rows={storage} />
             </div>
