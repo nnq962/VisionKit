@@ -144,7 +144,19 @@ class ModelApiTests(unittest.TestCase):
     def test_catalog_and_validation(self) -> None:
         """Catalog có size/checksum; từ chối URL tuỳ ý, ID giả và giới hạn model."""
         catalog = self.client.get("/api/v1/models/catalog").json()
-        self.assertEqual(len(catalog["families"]), 5)
+        self.assertEqual(
+            {family["id"] for family in catalog["families"]},
+            {
+                "yolo26",
+                "yolo11",
+                "yolov8",
+                "yoloe26",
+                "yoloe11",
+                "yolo12",
+                "yolov10",
+                "yoloev8",
+            },
+        )
         self.assertTrue(all(len(item["sha256"]) == 64 for item in catalog["variants"]))
         self.assertEqual(
             self.client.post(

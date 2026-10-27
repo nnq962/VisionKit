@@ -239,3 +239,22 @@ Confidence and IoU use keyboard-accessible native sliders (0–1, step 0.01) pai
 with numeric inputs for precise entry. The floating log window has a compact
 single-row title/actions header and responsive filter/search toolbar; dragging,
 resizing, pause, clear and filtering remain available.
+
+## YOLOE text prompt
+
+Trong YOLO pipeline, chọn YOLOE `.pt` rồi mở Thông số. Có sẵn 22 vật thể thường
+gặp: người, xe, laptop, màn hình, điện thoại, đồ gia dụng và chó/mèo. Bấm một gợi ý
+để thêm/bỏ, hoặc sửa tên tiếng Anh trong ô prompt (dấu phẩy/xuống dòng). Dùng gợi ý
+khôi phục bộ mặc định; Xoá hết để tự nhập danh sách mới. Giới hạn 80 prompt.
+Danh sách lưu theo model trên trình duyệt; run lưu snapshot trong backend. Thay đổi
+prompt tạo cấu hình chạy mới; không sửa run đang chạy. Nhãn kết quả dùng tên đã nhập.
+Không dùng bộ lọc class metadata của model khi chạy text prompt. Chuẩn bị text
+encoder theo `ai/README.md`; ONNX/prompt-free/fused chưa hỗ trợ đổi prompt.
+
+Kiểm tra contract và payload cho mọi loại nguồn: `npm run test:yoloe`.
+
+Trong bước Chạy, mục Hiển thị có tuỳ chọn Segmentation cho model segment (YOLO và
+YOLOE). Mask được tô bán trong suốt theo màu class, độc lập với Bounding box;
+mask/box/nhãn dùng cùng phép chiếu và clipping của ảnh/video. Tuỳ chọn được giữ
+trong localStorage. Polygon OBB không được tô như mask. Kiểm tra bằng
+`npm run test:overlay`.

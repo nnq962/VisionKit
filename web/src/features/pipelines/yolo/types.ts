@@ -1,4 +1,8 @@
+import { defaultTextPrompts } from "./text-prompts";
+
 export type YoloParameters = {
+  textPrompts: string;
+  textPromptEnabled: boolean;
   confidence: string;
   iou: string;
   imageSize: string;
@@ -13,6 +17,8 @@ export type YoloParameters = {
 };
 
 export const defaultParameters: YoloParameters = {
+  textPrompts: defaultTextPrompts,
+  textPromptEnabled: false,
   confidence: "0.25",
   iou: "0.7",
   imageSize: "640",

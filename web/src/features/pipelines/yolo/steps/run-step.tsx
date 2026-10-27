@@ -34,8 +34,10 @@ export function RunStep({
     ["Kích thước đầu vào", imageSizeLabel(parameters.imageSize)],
     ["Thiết bị", deviceLabels[parameters.device]],
     [
-      "Class",
-      classify || parameters.classMode === "all"
+      parameters.textPromptEnabled ? "Text prompt" : "Class",
+      parameters.textPromptEnabled
+        ? parameters.textPrompts
+        : classify || parameters.classMode === "all"
         ? "Tất cả class"
         : parameters.classes.map((id) => names[id] ?? id).join(", "),
     ],

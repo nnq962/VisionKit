@@ -63,3 +63,17 @@ export function modelVariant(
 export function modelTaskLabel(task: ModelTask | null) {
   return task ? taskLabels[task] : "Chưa xác định";
 }
+
+export type ModelGroup = "yolo" | "yoloe";
+export const modelGroupLabels = { all: "Tất cả nhóm", yolo: "YOLO", yoloe: "YOLOE" };
+
+export function modelGroup(familyId: string): ModelGroup {
+  return familyId.startsWith("yoloe") ? "yoloe" : "yolo";
+}
+
+/** Gom YOLO trước YOLOE, trong mỗi nhóm xếp thế hệ mới trước. */
+export function compareModelFamilies(left: string, right: string): number {
+  const group = Number(modelGroup(left) === "yoloe") - Number(modelGroup(right) === "yoloe");
+  const generation = (id: string) => Number(id.match(/\d+/)?.[0] ?? 0);
+  return group || generation(right) - generation(left);
+}

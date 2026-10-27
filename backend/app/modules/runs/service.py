@@ -237,6 +237,21 @@ class RunService:
                 raise SourceError(422, "Tác vụ model chưa được hỗ trợ.")
             if any(size < 32 or size > 4096 for size in options.imgsz):
                 raise SourceError(422, "Kích thước đầu vào không hợp lệ.")
+            if options.text_prompts is not None:
+                if not model.variant.familyId.startswith(
+                    "yoloe"
+                ) or model.variant.task not in {"detect", "segment"}:
+                    raise SourceError(
+                        422, "Text prompt chỉ hỗ trợ YOLOE detect/segment."
+                    )
+                if model.variant.format != "pt":
+                    raise SourceError(
+                        422, "Đổi text prompt cần model YOLOE .pt, không dùng ONNX."
+                    )
+                if options.classes is not None:
+                    raise SourceError(
+                        422, "Không kết hợp text prompt với bộ lọc class ID."
+                    )
             names = model.inspection.metadata.names if model.inspection.metadata else {}
             if options.classes is not None and (
                 not options.classes

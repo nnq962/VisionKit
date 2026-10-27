@@ -97,6 +97,56 @@
       ],
       "openVocabulary": true,
       "docs": "https://docs.ultralytics.com/models/yoloe/"
+    },
+    {
+      "id": "yolo12",
+      "name": "YOLO12",
+      "prefix": "yolo12",
+      "description": "Nhận diện vật thể với kiến trúc attention.",
+      "sizes": [
+        "n",
+        "s",
+        "m",
+        "l",
+        "x"
+      ],
+      "tasks": [
+        "detect"
+      ],
+      "docs": "https://docs.ultralytics.com/models/yolo12/"
+    },
+    {
+      "id": "yolov10",
+      "name": "YOLOv10",
+      "prefix": "yolov10",
+      "description": "Nhận diện vật thể với kiến trúc end-to-end.",
+      "sizes": [
+        "n",
+        "s",
+        "m",
+        "l",
+        "x"
+      ],
+      "tasks": [
+        "detect"
+      ],
+      "docs": "https://docs.ultralytics.com/models/yolov10/"
+    },
+    {
+      "id": "yoloev8",
+      "name": "YOLOE-v8",
+      "prefix": "yoloe-v8",
+      "description": "Nhận diện và phân đoạn theo prompt trên nền YOLOv8.",
+      "sizes": [
+        "s",
+        "m",
+        "l"
+      ],
+      "tasks": [
+        "segment"
+      ],
+      "openVocabulary": true,
+      "docs": "https://docs.ultralytics.com/models/yoloe/"
     }
   ],
   "variants": [
@@ -1261,6 +1311,162 @@
       "release": "v8.4.0",
       "provider": "ultralytics",
       "format": "pt"
+    },
+    {
+      "id": "yolo12n.pt",
+      "familyId": "yolo12",
+      "familyName": "YOLO12",
+      "filename": "yolo12n.pt",
+      "task": "detect",
+      "size": "n",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo12n.pt",
+      "expected_bytes": 5595063,
+      "sha256": "419ff3dca37d69bacc93a50fa0c186a1c6f9fe62fae0f108b0872829689e9ca6",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yolo12s.pt",
+      "familyId": "yolo12",
+      "familyName": "YOLO12",
+      "filename": "yolo12s.pt",
+      "task": "detect",
+      "size": "s",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo12s.pt",
+      "expected_bytes": 19006455,
+      "sha256": "e915c2c4286e3f6f8610ef106fa3f94a7b8c19b30eccede5887e22c33ef75f58",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yolo12m.pt",
+      "familyId": "yolo12",
+      "familyName": "YOLO12",
+      "filename": "yolo12m.pt",
+      "task": "detect",
+      "size": "m",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo12m.pt",
+      "expected_bytes": 40904955,
+      "sha256": "4c6d179786eddf6134ee469ae2f4ce04cbe4e9d1a47d6b669d9cd6b9c6c513d8",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yolo12l.pt",
+      "familyId": "yolo12",
+      "familyName": "YOLO12",
+      "filename": "yolo12l.pt",
+      "task": "detect",
+      "size": "l",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo12l.pt",
+      "expected_bytes": 53699086,
+      "sha256": "0babd8dc8f775bb64bb052debdff3d8b9e9b57efa9d7bfa11c84bb82c3fec336",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yolo12x.pt",
+      "familyId": "yolo12",
+      "familyName": "YOLO12",
+      "filename": "yolo12x.pt",
+      "task": "detect",
+      "size": "x",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo12x.pt",
+      "expected_bytes": 119322638,
+      "sha256": "682ce8dadee004dbe964950f1bf3eda451671815a6ed62db80b398916b9b7c6f",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yolov10n.pt",
+      "familyId": "yolov10",
+      "familyName": "YOLOv10",
+      "filename": "yolov10n.pt",
+      "task": "detect",
+      "size": "n",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov10n.pt",
+      "expected_bytes": 5860383,
+      "sha256": "11287ed0735678e7ba1ac2a9b3098c049155b3fde123992e724c1264bcc16b6f",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yolov10s.pt",
+      "familyId": "yolov10",
+      "familyName": "YOLOv10",
+      "filename": "yolov10s.pt",
+      "task": "detect",
+      "size": "s",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov10s.pt",
+      "expected_bytes": 16623111,
+      "sha256": "65fa8332c38a7189597a268897bce6c1026f9499711b9761fb0c2c639b91d4d6",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yolov10m.pt",
+      "familyId": "yolov10",
+      "familyName": "YOLOv10",
+      "filename": "yolov10m.pt",
+      "task": "detect",
+      "size": "m",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov10m.pt",
+      "expected_bytes": 33643667,
+      "sha256": "6dc78f7a88591cec1e8716b8f5c7e3aefa9206684f025d202be34439ccb329a0",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yolov10l.pt",
+      "familyId": "yolov10",
+      "familyName": "YOLOv10",
+      "filename": "yolov10l.pt",
+      "task": "detect",
+      "size": "l",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov10l.pt",
+      "expected_bytes": 52425230,
+      "sha256": "d0685e1e597f73aba8e56bc9651b6bb939c5b2f201dff5de0b9ef2a6207ae301",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yolov10x.pt",
+      "familyId": "yolov10",
+      "familyName": "YOLOv10",
+      "filename": "yolov10x.pt",
+      "task": "detect",
+      "size": "x",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov10x.pt",
+      "expected_bytes": 64395854,
+      "sha256": "605982e0b2c2ff070351afc8df3ecb38c54cfd7f133813acb366f454eb79b9a6",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yoloe-v8s-seg.pt",
+      "familyId": "yoloev8",
+      "familyName": "YOLOE-v8",
+      "filename": "yoloe-v8s-seg.pt",
+      "task": "segment",
+      "size": "s",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-v8s-seg.pt",
+      "expected_bytes": 31135890,
+      "sha256": "ac2b90ed23011495a3e86d89caeb3432a15129cac8d849ba121293c8fc1e0536",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yoloe-v8m-seg.pt",
+      "familyId": "yoloev8",
+      "familyName": "YOLOE-v8",
+      "filename": "yoloe-v8m-seg.pt",
+      "task": "segment",
+      "size": "m",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-v8m-seg.pt",
+      "expected_bytes": 65800690,
+      "sha256": "35845d446ac851c7498bade9ba7067fcff5afd22a1e064e1f424657432621a0d",
+      "release": "v8.4.0"
+    },
+    {
+      "id": "yoloe-v8l-seg.pt",
+      "familyId": "yoloev8",
+      "familyName": "YOLOE-v8",
+      "filename": "yoloe-v8l-seg.pt",
+      "task": "segment",
+      "size": "l",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-v8l-seg.pt",
+      "expected_bytes": 107405586,
+      "sha256": "14e9c146f7f7efa0bfea8c5f82952c9f95fb1f9c3bf0f18b3727b76624f9d746",
+      "release": "v8.4.0"
     }
   ]
 }

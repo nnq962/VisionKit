@@ -1,4 +1,4 @@
-import { projectPoint, type MediaTransform } from "./geometry";
+import { projectPoint, type MediaTransform } from "./geometry.ts";
 import type {
   Detection,
   DetectionFrame,
@@ -85,6 +85,32 @@ export function drawDetections(
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   ctx.font = `600 ${fontSize}px Manrope, sans-serif`;
+  // Tô mọi mask trước bbox/nhãn để mask phía sau không che annotation đã vẽ.
+  if (options.showSegments === true) {
+    for (const detection of frame.detections) {
+      const polygon = detection?.polygon;
+      if (
+        !Array.isArray(polygon) || polygon.length < 3 ||
+        (detection.confidence !== undefined &&
+          (!Number.isFinite(detection.confidence) || detection.confidence < threshold)) ||
+        polygon.some((point) => !Array.isArray(point) || point.length !== 2 || !point.every(Number.isFinite))
+      ) continue;
+      const points = polygon.map(([x, y]) => project(x, y));
+      if (points.some((point) => !point)) continue;
+      ctx.save();
+      ctx.strokeStyle = detectionColor(detection);
+      ctx.fillStyle = detectionColor(detection);
+      ctx.beginPath();
+      ctx.moveTo(points[0]!.x, points[0]!.y);
+      for (const point of points.slice(1)) ctx.lineTo(point!.x, point!.y);
+      ctx.closePath();
+      ctx.globalAlpha = 0.25;
+      ctx.fill();
+      ctx.globalAlpha = 0.85;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
   for (const detection of frame.detections) {
     if (
       !detection ||

@@ -116,6 +116,7 @@ class RunTests(unittest.TestCase):
         self.video_partial = False
         self.ai_logs = LogBuffer("ai")
         self.inference_headers = []
+        self.inference_payloads = []
         self.delay = 0.01
         self.ai_fail = False
         self.stack.enter_context(
@@ -153,6 +154,7 @@ class RunTests(unittest.TestCase):
             )
         if "/inference/" in request.url.path:
             self.inference_headers.append(request.headers.get("X-VisionKit-Run-ID"))
+            self.inference_payloads.append(json.loads(request.content))
         if request.url.path.endswith("inspect"):
             return httpx.Response(
                 200,
@@ -213,6 +215,51 @@ class RunTests(unittest.TestCase):
                 return record
             time.sleep(0.01)
         self.fail("Job không kết thúc")
+
+    def test_yoloe_prompt_snapshot_and_validation(self) -> None:
+        """Prompt đi xuyên backend/AI theo thứ tự và còn nguyên sau khi mở lại DB."""
+        options = {
+            "device": "cpu",
+            "text_prompts": [" laptop ", "person", "cell phone"],
+        }
+        self.assertEqual(self.start(options=json.dumps(options)).status_code, 422)
+        model = self.app.state.models.repository.configure(
+            self.model_id, "yoloe", "segment"
+        )
+        response = self.start(options=json.dumps(options))
+        self.assertEqual(response.status_code, 202, response.text)
+        run = self.wait(response.json()["id"])
+        self.assertEqual(run["status"], "completed", run)
+        expected = ["laptop", "person", "cell phone"]
+        self.assertEqual(run["options"]["text_prompts"], expected)
+        self.assertEqual(
+            self.inference_payloads[-1]["options"]["text_prompts"], expected
+        )
+        self.assertEqual(self.inference_payloads[-1]["family"], "yoloe")
+        with TestClient(create_app(self.settings)) as reopened:
+            self.assertEqual(
+                reopened.get(f"/api/v1/runs/{run['id']}").json()["options"][
+                    "text_prompts"
+                ],
+                expected,
+            )
+        for prompts in (
+            [],
+            ["car", "CAR"],
+            ["a" * 81],
+            ["a\tb"],
+            [str(i) for i in range(81)],
+        ):
+            self.assertEqual(
+                self.start(options=json.dumps({"text_prompts": prompts})).status_code,
+                422,
+            )
+        self.assertEqual(
+            self.start(options=json.dumps({**options, "classes": [0]})).status_code, 422
+        )
+        model.variant.format = "onnx"
+        with patch.object(self.app.state.models, "available", return_value=model):
+            self.assertEqual(self.start(options=json.dumps(options)).status_code, 422)
 
     def test_unsaved_source_result_preview_and_websocket(self) -> None:
         """Ảnh chạy không vào thư viện, kết quả giữ trong DB và có snapshot WS cùng preview."""

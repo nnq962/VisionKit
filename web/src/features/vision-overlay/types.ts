@@ -12,6 +12,8 @@ export type Detection = {
   label?: string;
   confidence?: number;
   bbox?: BoundingBox;
+  /** Polygon theo toạ độ ảnh gốc; cùng hệ toạ độ với bbox. */
+  polygon?: readonly (readonly [number, number])[];
   /** Giữ nguyên index; dùng null cho khớp không có dữ liệu. */
   keypoints?: readonly (Keypoint | null)[];
 };
@@ -26,6 +28,8 @@ export type SkeletonEdge = readonly [number, number];
 export type MediaFit = "contain" | "cover" | "fill";
 export type OverlayOptions = {
   showBoxes?: boolean;
+  /** Bật riêng cho kết quả segmentation, tránh tô polygon OBB như mask. */
+  showSegments?: boolean;
   showLabels?: boolean;
   showConfidence?: boolean;
   showKeypoints?: boolean;

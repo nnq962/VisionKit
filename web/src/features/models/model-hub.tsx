@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { taskLabels, modelTaskLabel, type ModelTask } from "./catalog";
+import { taskLabels, modelTaskLabel, modelGroup, modelGroupLabels, compareModelFamilies, type ModelGroup, type ModelTask } from "./catalog";
 import { useModelDownloads } from "./use-model-downloads";
 import { ModelCatalogRow } from "./components/model-catalog-row";
 import { ModelDownloadList } from "./components/model-download-list";
@@ -28,13 +28,15 @@ export function ModelHub() {
   const [tab, setTab] = useState<"catalog" | "saved" | "downloads">("catalog");
   const [search, setSearch] = useState("");
   const [task, setTask] = useState<ModelTask | "all">("all");
-  const [family, setFamily] = useState("all");
+  const [family, setFamily] = useState<ModelGroup | "all">("all");
   const downloads = useModelDownloads();
-  const modelFamilies = downloads.families;
+  const modelFamilies = [...downloads.families].sort((a, b) => compareModelFamilies(a.id, b.id));
+  const groupFamilies = modelFamilies.filter((item) => family === "all" || modelGroup(item.id) === family);
+  const availableTasks = new Set(groupFamilies.flatMap((item) => item.tasks));
   const query = search.trim().toLowerCase();
   const families = modelFamilies.filter(
     (item) =>
-      (family === "all" || item.id === family) &&
+      (family === "all" || modelGroup(item.id) === family) &&
       (task === "all" || item.tasks.includes(task)) &&
       `${item.name} ${item.prefix} ${item.tasks.map((t) => taskLabels[t]).join(" ")}`
         .toLowerCase()
@@ -42,12 +44,12 @@ export function ModelHub() {
   );
   const saved = downloads.saved.filter(
     (item) =>
-      (family === "all" || item.familyId === family) &&
+      (family === "all" || modelGroup(item.familyId) === family) &&
       (task === "all" || item.task === task) &&
       `${item.name ?? ""} ${item.filename} ${item.familyName} ${modelTaskLabel(item.task)}`
         .toLowerCase()
         .includes(query),
-  );
+  ).sort((a, b) => compareModelFamilies(a.familyId, b.familyId));
   const filtered = Boolean(query) || task !== "all" || family !== "all";
   const running = downloads.history.filter((job) =>
     ["queued", "downloading"].includes(job.status),
@@ -141,19 +143,24 @@ export function ModelHub() {
                 />
               </div>
               <div className="grid grid-cols-2 gap-2 sm:flex">
-                <Select value={family} onValueChange={setFamily}>
+                <Select value={family} onValueChange={(value) => {
+                  const next = value as ModelGroup | "all";
+                  setFamily(next);
+                  if (task !== "all" && !modelFamilies.some((item) =>
+                    (next === "all" || modelGroup(item.id) === next) && item.tasks.includes(task),
+                  )) setTask("all");
+                }}>
                   <SelectTrigger
-                    aria-label="Lọc dòng model"
+                    aria-label="Lọc nhóm model"
                     className="w-full sm:w-36"
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="all">Tất cả dòng</SelectItem>
-                      {modelFamilies.map((item) => (
-                        <SelectItem value={item.id} key={item.id}>
-                          {item.name}
+                      {Object.entries(modelGroupLabels).map(([value, label]) => (
+                        <SelectItem value={value} key={value}>
+                          {label}
                         </SelectItem>
                       ))}
                     </SelectGroup>
@@ -172,7 +179,7 @@ export function ModelHub() {
                   <SelectContent>
                     <SelectGroup>
                       <SelectItem value="all">Tất cả tác vụ</SelectItem>
-                      {Object.entries(taskLabels).map(([value, label]) => (
+                      {Object.entries(taskLabels).filter(([value]) => availableTasks.has(value as ModelTask)).map(([value, label]) => (
                         <SelectItem value={value} key={value}>
                           {label}
                         </SelectItem>

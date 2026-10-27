@@ -19,6 +19,8 @@ def load_model(model_path: Path, request: ModelPredictRequest) -> tuple[Any, str
 
     if not _SafeLoad.SUPPORTED or not SAFE_LOAD:
         raise ValueError("Runtime không hỗ trợ restricted loading.")
+    if request.options.text_prompts is not None and model_path.suffix != ".pt":
+        raise ValueError("Đổi text prompt cần model YOLOE .pt, không dùng ONNX.")
     options = request.options
     device = options.device
     if device == "auto":
@@ -58,6 +60,10 @@ def load_model(model_path: Path, request: ModelPredictRequest) -> tuple[Any, str
     model = (YOLOE if request.family == "yoloe" else YOLO)(
         str(model_path), task=request.task
     )
+    if options.text_prompts is not None:
+        from app.adapters.ultralytics.yoloe import configure_text_prompts
+
+        configure_text_prompts(model, options.text_prompts, device)
     return model, device
 
 

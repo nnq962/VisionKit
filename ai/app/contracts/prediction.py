@@ -2,7 +2,14 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 from app.contracts.options import PredictOptions
 from app.core.rtsp import validate_rtsp_url
@@ -18,6 +25,16 @@ class ModelPredictRequest(BaseModel):
     family: Literal["yolo", "yoloe"] = "yolo"
     task: Literal["detect", "pose", "classify", "segment", "obb"] = "detect"
     options: PredictOptions = Field(default_factory=PredictOptions)
+
+    @model_validator(mode="after")
+    def valid_prompt_mode(self) -> "ModelPredictRequest":
+        """Giới hạn text prompt cho YOLOE detect/segment, tách khỏi bộ lọc class."""
+        if self.options.text_prompts is not None:
+            if self.family != "yoloe" or self.task not in {"detect", "segment"}:
+                raise ValueError("Text prompt chỉ hỗ trợ YOLOE detect/segment.")
+            if self.options.classes is not None:
+                raise ValueError("Không kết hợp text prompt với bộ lọc class ID.")
+        return self
 
 
 # -------------------------- Yêu cầu xử lý file local --------------------------
