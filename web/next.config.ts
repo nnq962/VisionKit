@@ -7,7 +7,11 @@ const nextConfig: NextConfig = {
       { source: "/api/v1/:path*", destination: `${backend}/api/v1/:path*` },
     ];
   },
-  experimental: { proxyClientMaxBodySize: "210mb" },
+  experimental: {
+    proxyClientMaxBodySize: "210mb",
+    // A stale persisted dev graph caused Fast Refresh to reload every page in a loop.
+    turbopackFileSystemCacheForDev: false,
+  },
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

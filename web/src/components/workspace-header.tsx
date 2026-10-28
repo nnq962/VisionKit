@@ -3,13 +3,16 @@
 import { LogViewer } from "@/features/logs/log-viewer";
 import { BackendStatus } from "@/components/backend-status";
 import { usePathname } from "next/navigation";
-import { isRouteActive, workspaceNavigation } from "@/lib/navigation";
+import { isRouteActive, navigationGroups } from "@/lib/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 
 export function WorkspaceHeader() {
   const pathname = usePathname();
-  const current = workspaceNavigation.find((item) =>
+  const group = navigationGroups.find((group) =>
+    group.items.some((item) => isRouteActive(pathname, item.href)),
+  );
+  const current = group?.items.find((item) =>
     isRouteActive(pathname, item.href),
   );
   return (
@@ -21,7 +24,7 @@ export function WorkspaceHeader() {
       />
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <span className="hidden text-sm text-muted-foreground sm:inline">
-          Workspace
+          {group?.title ?? "Workspace"}
         </span>
         <span
           className="hidden text-muted-foreground sm:inline"
@@ -34,7 +37,10 @@ export function WorkspaceHeader() {
         </span>
       </div>
       <BackendStatus />
-      <Separator orientation="vertical" className="data-vertical:h-4 data-vertical:self-auto" />
+      <Separator
+        orientation="vertical"
+        className="data-vertical:h-4 data-vertical:self-auto"
+      />
       <LogViewer />
     </header>
   );

@@ -56,6 +56,142 @@ class LiveRelayTests(unittest.TestCase):
         self.assertFalse(self.app.state.streams.viewers)
         self.assertFalse(self.app.state.runs.relay_leases)
 
+    def test_counting_service_reconnects_rtsp_and_releases_every_lease(self) -> None:
+        """Nối lượt RTSP hết hạn, thử lại EOF và Dừng từ cấu hình không giữ relay mồ côi."""
+        self.app.state.counting_supervisor.paused = True
+        supervisor = self.app.state.counting_supervisor
+        self.app.state.models.repository.configure(self.model_id, "yoloe", "segment")
+        sid = self.source()["id"]
+        signature = self.client.get(f"/api/v1/counting/sources/{sid}").json()[
+            "source_signature"
+        ]
+        response = self.client.post(
+            "/api/v1/counting/profiles",
+            json={
+                "name": "Camera continuous",
+                "source_id": sid,
+                "source_signature": signature,
+                "config": {
+                    "reference_width": 64,
+                    "reference_height": 32,
+                    "zones": [
+                        {
+                            "id": str(uuid4()),
+                            "name": "Camera",
+                            "points": [[0, 0], [1, 0], [1, 1], [0, 1]],
+                        }
+                    ],
+                },
+                "monitor": {
+                    "model_id": self.model_id,
+                    "continuous": True,
+                    "duration_seconds": 60,
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        pid = response.json()["id"]
+        endpoint = f"/api/v1/counting/profiles/{pid}"
+        first = self.client.post(endpoint + "/runs").json()
+        self.assertEqual(self.wait(first["id"])["completion_reason"], "duration_limit")
+        self.hold = True
+        self.client.portal.call(supervisor.tick)
+        second = self.client.get(endpoint).json()
+        self.assertNotEqual(second["current_run_id"], first["id"])
+        owner = self.client.get(f"/api/v1/counting/sources/{sid}").json()
+        self.assertEqual(owner["owner_profile_id"], pid)
+        self.assertTrue(owner["enabled"])
+        self.assertNotIn("very-private", json.dumps(second))
+        self.client.post(endpoint + "/stop")
+        self.assertFalse(self.app.state.runs.relay_leases)
+        self.assertFalse(self.app.state.streams.viewers)
+        self.client.portal.call(supervisor.tick)
+        self.assertEqual(
+            self.client.get(endpoint).json()["current_run_id"], second["current_run_id"]
+        )
+
+    def test_counting_rtsp_snapshot_cancel_and_redaction(self) -> None:
+        """Đếm RTSP dùng relay chung, lưu vùng và nhả lease khi dừng; không lộ URL."""
+        self.hold = True
+        self.app.state.models.repository.configure(self.model_id, "yoloe", "segment")
+        sid = self.source()["id"]
+        endpoint = f"/api/v1/counting/sources/{sid}"
+        initial = self.client.get(endpoint).json()
+        config = {
+            "reference_width": 64,
+            "reference_height": 32,
+            "zones": [
+                {
+                    "id": str(uuid4()),
+                    "name": "Camera zone",
+                    "points": [[0, 0], [1, 0], [1, 1], [0, 1]],
+                }
+            ],
+        }
+        save = self.client.put(
+            endpoint,
+            json={"source_signature": initial["source_signature"], "config": config},
+        )
+        self.assertEqual(save.status_code, 200, save.text)
+        response = self.client.post(
+            "/api/v1/counting/runs",
+            json={
+                "source_id": sid,
+                "model_id": self.model_id,
+                "source_signature": initial["source_signature"],
+                "config": config,
+                "duration_seconds": 10,
+            },
+        )
+        self.assertEqual(response.status_code, 202, response.text)
+        rid = response.json()["id"]
+        for _ in range(100):
+            record = self.client.get(f"/api/v1/runs/{rid}").json()
+            if record["counts"]:
+                break
+            time.sleep(0.01)
+        self.assertTrue(record["counts"]["valid"], record)
+        self.assertEqual(record["counts"]["regions"][0]["counts"]["person"], 0)
+        self.assertNotIn("very-private", json.dumps(record))
+        self.assertNotIn("counting", self.payload)
+        self.assertEqual(self.client.get(endpoint).json()["current_run_id"], rid)
+        updated = self.client.put(
+            endpoint,
+            json={
+                "source_signature": initial["source_signature"],
+                "config": config,
+                "monitor": {
+                    "model_id": self.model_id,
+                    "options": {"conf": 0.8},
+                    "duration_seconds": 3600,
+                },
+            },
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(updated.json()["monitor"]["options"]["conf"], 0.8)
+        self.assertEqual(
+            self.client.get(f"/api/v1/runs/{rid}").json()["options"]["conf"], 0.25
+        )
+        duplicate = self.client.post(
+            "/api/v1/counting/runs",
+            json={
+                "source_id": sid,
+                "model_id": self.model_id,
+                "source_signature": initial["source_signature"],
+                "config": config,
+            },
+        )
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+        self.assertEqual(
+            self.client.delete(f"/api/v1/runs/{rid}").json()["status"], "cancelled"
+        )
+        self.assertFalse(self.app.state.streams.viewers)
+        self.assertFalse(self.app.state.runs.relay_leases)
+        # Lưu vùng sau run không làm mất cấu hình nguồn; dọn run giữ cả nguồn/vùng.
+        self.client.delete(f"/api/v1/runs/{rid}/resources")
+        self.assertEqual(len(self.client.get(endpoint).json()["config"]["zones"]), 1)
+        self.assertIsNone(self.client.get(endpoint).json()["current_run_id"])
+
     def test_temporary_run_outlives_browser_and_cancel_reclaims_url(self) -> None:
         """Đóng browser không dừng AI; huỷ AI cuối cùng mới xoá URL/path tạm."""
         self.hold = True

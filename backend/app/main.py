@@ -16,6 +16,7 @@ from app.core.config import Settings, load_settings
 from app.core.errors import SourceError
 from app.core.logs import LogBuffer, attach_logging, detach_logging
 from app.db import initialize_database
+from app.modules.counting.supervisor import CountingSupervisor
 from app.modules.logs.service import LogCollector
 from app.modules.models.repository import ModelRepository
 from app.modules.models.service import ModelService
@@ -83,6 +84,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             application.state.runs.cleanup_task = asyncio.create_task(
                 application.state.runs.maintain()
             )
+            application.state.counting_supervisor = CountingSupervisor(application)
+            supervisor_task = asyncio.create_task(
+                application.state.counting_supervisor.run()
+            )
+            cleanup.push_async_callback(cancel_background_task, supervisor_task)
             logger.info("Backend đã sẵn sàng.")
             yield
 

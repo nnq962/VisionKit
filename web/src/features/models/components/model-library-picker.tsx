@@ -16,7 +16,17 @@ import type { ModelSelection } from "../use-model-selection";
 export function ModelLibraryPicker({
   selection,
 }: {
-  selection: ModelSelection;
+  selection: Pick<
+    ModelSelection,
+    | "library"
+    | "selectedId"
+    | "loading"
+    | "libraryError"
+    | "validating"
+    | "refresh"
+  > & {
+    update: (next: { selectedId: string }) => void;
+  };
 }) {
   const [search, setSearch] = useState("");
   const [limit, setLimit] = useState(20);
@@ -76,37 +86,39 @@ export function ModelLibraryPicker({
           <div className="divide-y">
             {items.slice(0, limit).map((item) => (
               <div key={item.id} className="py-1 first:pt-0 last:pb-0">
-              <label
-                className={`flex cursor-pointer items-center gap-3 rounded-lg p-3 text-left focus-within:ring-2 focus-within:ring-ring ${selection.selectedId === item.id ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"}`}
-              >
-                <input
-                  className="sr-only"
-                  type="radio"
-                  name="pipeline-model"
-                  value={item.id}
-                  checked={selection.selectedId === item.id}
-                  onChange={() => selection.update({ selectedId: item.id })}
-                  disabled={selection.validating}
-                />
-                <BoxIcon
-                  className="size-5 shrink-0 text-muted-foreground"
-                  strokeWidth={1.5}
-                />
-                <span className="min-w-0 flex-1 space-y-1">
-                  <span title={item.name ?? item.filename}
-                    className="block truncate text-sm font-medium">
-                    {item.name ?? item.filename}
+                <label
+                  className={`flex cursor-pointer items-center gap-3 rounded-lg p-3 text-left focus-within:ring-2 focus-within:ring-ring ${selection.selectedId === item.id ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"}`}
+                >
+                  <input
+                    className="sr-only"
+                    type="radio"
+                    name="pipeline-model"
+                    value={item.id}
+                    checked={selection.selectedId === item.id}
+                    onChange={() => selection.update({ selectedId: item.id })}
+                    disabled={selection.validating}
+                  />
+                  <BoxIcon
+                    className="size-5 shrink-0 text-muted-foreground"
+                    strokeWidth={1.5}
+                  />
+                  <span className="min-w-0 flex-1 space-y-1">
+                    <span
+                      title={item.name ?? item.filename}
+                      className="block truncate text-sm font-medium"
+                    >
+                      {item.name ?? item.filename}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {item.familyName} · {modelTaskLabel(item.task)} ·{" "}
+                      {(item.format ?? "pt").toUpperCase()} ·{" "}
+                      {formatBytes(item.sizeBytes)}
+                    </span>
                   </span>
-                  <span className="block text-xs text-muted-foreground">
-                    {item.familyName} · {modelTaskLabel(item.task)} ·{" "}
-                    {(item.format ?? "pt").toUpperCase()} ·{" "}
-                    {formatBytes(item.sizeBytes)}
-                  </span>
-                </span>
-                {selection.selectedId === item.id && (
-                  <CheckIcon className="size-4 shrink-0" />
-                )}
-              </label>
+                  {selection.selectedId === item.id && (
+                    <CheckIcon className="size-4 shrink-0" />
+                  )}
+                </label>
               </div>
             ))}
           </div>

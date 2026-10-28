@@ -458,3 +458,80 @@ Các endpoint tạo run nhận `options.text_prompts` (mảng 1–80 tên vật 
 Prompt được lưu trong run và chuyển nguyên thứ tự sang AI cho mọi loại nguồn;
 nhãn/class ID trong kết quả do prompt của run quyết định. Metadata model giữ nguyên.
 Xem setup text encoder trong `ai/README.md` trước khi chạy lần đầu.
+
+## Zone occupancy counting
+
+Cấu hình có tên dùng các endpoint:
+
+- `GET /api/v1/counting/profiles`: danh sách cấu hình kèm chữ ký nguồn, trạng thái
+  stale và `current_run_id` riêng của từng cấu hình.
+- `POST /api/v1/counting/profiles`: tạo `{name, source_id, source_signature, config,
+  monitor}`; `PUT /profiles/{id}` cập nhật cùng cấu trúc. Tên được trim, tối đa 100
+  ký tự, không rỗng/ký tự điều khiển; tên trùng không phân biệt hoa/thường trả 409.
+- `GET /api/v1/counting/profiles/{id}` đọc snapshot; `POST /profiles/{id}/runs`
+  chạy snapshot lưu ở backend, không cần gửi lại model/vùng/thông số từ frontend.
+
+Bảng `counting_profiles` lưu nhiều cấu hình cùng nguồn và con trỏ lượt độc lập.
+Migration chuyển cấu hình metadata cũ thành tên đánh số, không xoá metadata cũ.
+Cập nhật cấu hình không sửa snapshot lượt đang chạy. Nguồn thay đổi/xoá được đánh
+stale, chặn chạy đến khi sửa cấu hình. Cơ chế chống chạy trùng nguồn vẫn áp dụng.
+Các endpoint theo nguồn dưới đây được giữ để tương thích luồng cũ.
+
+
+`GET /api/v1/counting/sources/{source_id}` trả `source_signature`, cấu hình hoặc
+null, `monitor`, `current_run_id` và `stale`. `PUT` nhận `{source_signature, config,
+monitor?}`. `monitor` gồm model_id, options theo RunOptions và duration_seconds
+(60–14400, bội số 60). Lưu cùng vùng trong một giao dịch; client cũ không gửi
+monitor vẫn giữ thiết lập đã có. Lưu cấu hình không tạo worker hoặc sửa lượt đang chạy. Cấu hình gồm version 1,
+`reference_width`, `reference_height`, `classes` (1–80 prompt, mỗi prompt 1–80 ký tự),
+và `zones` (0–20 vùng). Mỗi vùng có UUID,
+name (1–60 ký tự), color (#RRGGBB), points chuẩn hoá 0–1 (3–32 đỉnh), classes là
+tập con không rỗng của `config.classes`. Class được trim, không trùng (không phân biệt
+hoa thường), không chứa ký tự điều khiển. Cấu hình cũ thiếu classes dùng sáu prompt y tế. Polygon đơn, không trùng đỉnh hoặc suy biến.
+
+Cấu hình lưu ở namespace `zone_counting` trong metadata nguồn SQLite, không thay
+schema DB. Chữ ký dựa trên nội dung/vị trí/kích thước nguồn; đổi tên giữ vùng, đổi
+nguồn làm vùng cũ stale. Lưu vùng giữ nguyên metadata và không sửa run đang chạy.
+
+`POST /api/v1/counting/runs` nhận `source_id`, `model_id`, `source_signature`,
+`config`, `options` thông thường và `duration_seconds` cho RTSP. Chỉ nhận nguồn
+video/RTSP đã lưu và model YOLOE PT; cần ít nhất một vùng. Backend luôn ghi đè
+text_prompts thành `config.classes` theo đúng thứ tự và classes=null. Vùng nằm ở RunRecord.counting,
+không gửi sang AI. RunRecord.counts chứa valid/reason, frame_id, timestamp_ms,
+anchor=bottom_center và regions với counts theo nhãn. Đếm mỗi frame độc lập, dùng
+điểm giữa đáy bbox; biên thuộc vùng, vùng chồng nhau đếm riêng. Tỷ lệ ảnh lệch trên
+1% trả counts.valid=false và regions rỗng. Detection hỏng bị bỏ qua.
+
+Dùng GET/DELETE `/api/v1/runs/{id}` và DELETE `/api/v1/runs/{id}/resources` hiện có
+để theo dõi/dừng/dọn lượt. JSON/latest/WS đều giữ snapshot đếm cùng frame. Cleanup
+run giữ cấu hình nguồn; xoá nguồn tự xoá cấu hình cùng metadata. Không có tracking,
+lượt vào/ra, hay đảm bảo chống detection trùng do model. Các endpoint thừa hưởng
+hàng chờ, semaphore, timeout và lease MediaMTX hiện tại. Tạo run đếm được tuần tự
+hoá; nguồn có run đang queued/running trả 409. ID run và chữ ký nguồn lưu tại
+metadata.zone_counting_run để UI khác tìm lại. Run bị dọn/hết hạn hoặc nguồn đổi
+chữ ký không được trả ID cũ. Supervisor cấu hình có tên theo dõi và nối lượt riêng.
+
+
+### Vận hành cấu hình đếm liên tục
+
+`monitor.continuous` bật nối lượt/lặp video; `monitor.auto_start` bật chạy sau lưu
+và khôi phục ý định đang bật khi backend restart. Cả hai mặc định false, không làm
+cấu hình cũ tự chạy. `enabled` lưu ý định, `runtime` trả phase/error/retry_at cho UI.
+Dừng lưu enabled=false trước khi cancel worker, nên không bị supervisor bật lại.
+
+- `POST /api/v1/counting/profiles/{id}/stop`: tắt ý định và thu hồi worker, kể cả
+  khi nguồn đổi chữ ký. Source config trả owner_profile_id để Configure dừng đúng
+  cấu hình đang giữ nguồn.
+- `POST /profiles/{id}/duplicate`: copy snapshot, sinh tên duy nhất; bỏ con trỏ
+  run, enabled và auto_start để không nhân đôi dịch vụ đang chạy.
+- `DELETE /profiles/{id}`: soft delete cấu hình đã dừng. `POST /profiles/{id}/restore`
+  khôi phục; tên đã dùng lại trả 409. Không xoá nguồn/model/media.
+
+Supervisor lifespan chạy mỗi giây, cùng creation_lock với API. Retry tăng từ 2
+đến 60 giây, watchdog 45 giây cho worker running không cập nhật. Queued không bị
+watchdog huỷ do RunService giới hạn đồng thời. Model/nguồn sai được báo blocked;
+nguồn đổi chữ ký làm thu hồi worker cũ. Các lượt tự nối cũ được finish để dọn
+snapshot/file, không giữ lịch sử vô hạn. Có khoảng ngắt khi đổi lượt.
+
+Triển khai một backend worker. `python3 dev.py --supervise` phục hồi process con
+bị thoát; auto_start của cấu hình điều khiển việc phục hồi đếm sau backend restart.

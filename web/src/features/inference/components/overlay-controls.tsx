@@ -7,6 +7,9 @@ export function OverlayControls({
   segment,
   canConnect,
   classify,
+  independentLabels = false,
+  hideUnsupported = false,
+  extraControls = [],
 }: {
   preferences: OverlayPreferences;
   onChange: (next: OverlayPreferences) => void;
@@ -14,13 +17,41 @@ export function OverlayControls({
   segment: boolean;
   canConnect: boolean;
   classify: boolean;
+  independentLabels?: boolean;
+  hideUnsupported?: boolean;
+  extraControls?: {
+    id: string;
+    label: string;
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+  }[];
 }) {
   const rows: [keyof OverlayPreferences, string, boolean][] = [
     ["boxes", "Bounding box", classify],
     ["segments", "Segmentation", !segment],
-    ["labels", "Tên class / confidence", classify || !preferences.boxes],
+    [
+      "labels",
+      "Tên class / confidence",
+      classify || (!independentLabels && !preferences.boxes),
+    ],
     ["keypoints", "Điểm khớp", !pose],
     ["skeleton", "Đường nối khớp", !pose || !canConnect],
+  ];
+  const controls = rows
+    .filter(([key]) =>
+      !hideUnsupported ||
+      (key !== "keypoints" && key !== "skeleton" && (key !== "segments" || segment)),
+    )
+    .map(([key, label, disabled]) => ({
+      id: key,
+      label,
+      disabled,
+      checked: !disabled && preferences[key],
+      onChange: (checked: boolean) => onChange({ ...preferences, [key]: checked }),
+    }));
+  const allControls = [
+    ...controls,
+    ...extraControls.map((control) => ({ ...control, disabled: false })),
   ];
   return (
     <section className="space-y-4" aria-labelledby="overlay-heading">
@@ -28,20 +59,18 @@ export function OverlayControls({
         Hiển thị
       </h3>
       <div className="divide-y">
-        {rows.map(([key, label, disabled]) => (
+        {allControls.map(({ id, label, disabled, checked, onChange: change }) => (
           <label
-            key={key}
-            className={`flex items-center justify-between gap-4 py-3 first:pt-0 ${disabled ? "text-muted-foreground" : "cursor-pointer"}`}
+            key={id}
+            className={`flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0 ${disabled ? "text-muted-foreground" : "cursor-pointer"}`}
           >
             <span className="text-sm">{label}</span>
             <input
               type="checkbox"
               className="size-4 shrink-0 accent-primary"
-              checked={!disabled && preferences[key]}
+              checked={checked}
               disabled={disabled}
-              onChange={(event) =>
-                onChange({ ...preferences, [key]: event.target.checked })
-              }
+              onChange={(event) => change(event.target.checked)}
             />
           </label>
         ))}

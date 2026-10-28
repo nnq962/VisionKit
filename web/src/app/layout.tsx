@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { VideoStreamProvider } from "@/features/video-stream";
 import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const manrope = Manrope({
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <VideoStreamProvider><TooltipProvider>{children}</TooltipProvider></VideoStreamProvider>
+        <Toaster position="top-right" richColors />
       </body>
     </html>
   );

@@ -13,6 +13,8 @@ from pydantic import (
     model_validator,
 )
 
+from app.modules.counting.schemas import CountingConfig
+
 
 # ------------------------------ Hạn dùng lượt chạy ---------------------------
 def run_expiry() -> str:
@@ -64,6 +66,8 @@ class RunRecord(BaseModel):
     """Lưu trạng thái, ảnh đầu vào riêng và JSON kết quả; không chứa model hoặc tensor."""
 
     id: str
+    counting: CountingConfig | None = None
+    counts: dict[str, Any] | None = None
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
     source_kind: Literal["image", "screen", "video", "stream", "webcam"] = "image"
     progress: dict[str, Any] | None = None

@@ -19,6 +19,8 @@ from app.core.config import Settings
 from app.core.errors import SourceError
 from app.core.logs import run_context
 from app.core.rtsp import validate_rtsp_url
+from app.modules.counting.schemas import CountingConfig
+from app.modules.counting.service import count_frame
 from app.modules.models.repository import timestamp
 from app.modules.models.schemas import StoredModel
 from app.modules.models.service import ModelService
@@ -86,6 +88,8 @@ class RunService:
         stream: BinaryIO,
         filename: str,
         kind: str = "image",
+        *,
+        counting: CountingConfig | None = None,
     ) -> RunRecord:
         """Lưu ảnh độc lập thư viện rồi tạo job; rollback file nếu model/cấu hình/DB không hợp lệ."""
         if not self.settings.ai_url:
@@ -98,7 +102,9 @@ class RunService:
             filename,
         )
         try:
-            return await self._enqueue(model_id, options, location, metadata, kind)
+            return await self._enqueue(
+                model_id, options, location, metadata, kind, counting=counting
+            )
         except Exception:
             for path in self.storage.source_paths(location, metadata):
                 path.unlink(missing_ok=True)
@@ -140,6 +146,8 @@ class RunService:
         source_id: str | None,
         preview_id: str | None,
         duration_seconds: int,
+        *,
+        counting: CountingConfig | None = None,
     ) -> RunRecord:
         """Chạy AI đọc MediaMTX, giữ path đến khi terminal; không lưu URL camera trong run."""
         if self.previews is None:
@@ -161,6 +169,7 @@ class RunService:
                 "stream",
                 stream_url=relay,
                 duration_seconds=duration_seconds,
+                counting=counting,
             )
             self.relay_leases[record.id] = token
             return record
@@ -208,6 +217,7 @@ class RunService:
         *,
         stream_url: str | None = None,
         duration_seconds: int = 3600,
+        counting: CountingConfig | None = None,
     ) -> RunRecord:
         """Kiểm model/options và giữ lease trong cùng khoá trước khi đưa job vào hàng chờ."""
         if not self.settings.ai_url:
@@ -225,6 +235,16 @@ class RunService:
                     409, "Webcam này đang chạy AI. Dừng lượt hiện tại trước."
                 )
             model = self.models.available(model_id)
+            if counting is not None and (
+                kind not in {"video", "stream"}
+                or not counting.zones
+                or not model.variant.familyId.startswith("yoloe")
+                or model.variant.format != "pt"
+                or model.variant.task not in {"detect", "segment"}
+            ):
+                raise SourceError(
+                    422, "Đếm theo vùng cần model YOLOE .pt và video/RTSP hợp lệ."
+                )
             if model.inspection.status not in {"ready", "manual"}:
                 raise SourceError(409, "Đọc metadata model trước khi chạy.")
             if model.variant.task not in {
@@ -262,6 +282,7 @@ class RunService:
             record = self.repository.save(
                 RunRecord(
                     id=run_id,
+                    counting=counting.model_copy(deep=True) if counting else None,
                     status="queued",
                     source_kind=kind,
                     model_id=model_id,
@@ -457,6 +478,9 @@ class RunService:
                     update={
                         "status": "completed" if completed else "running",
                         "result": result,
+                        "counts": count_frame(result, record.counting)
+                        if record.counting
+                        else None,
                         "progress": event.get("progress"),
                         "completion_reason": "duration_limit"
                         if completed and record.source_kind in {"stream", "webcam"}

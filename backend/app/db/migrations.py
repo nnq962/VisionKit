@@ -53,6 +53,35 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         "CREATE INDEX model_expiry_idx ON models(expires_at)",
     ),
     ("CREATE TABLE runs (id TEXT PRIMARY KEY, record_json TEXT NOT NULL)",),
+    (
+        """CREATE TABLE counting_profiles (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            name_key TEXT NOT NULL UNIQUE,
+            source_id TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL,
+            current_run_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
+        """INSERT INTO counting_profiles
+            (id, name, name_key, source_id, snapshot_json, current_run_id,
+             created_at, updated_at)
+            SELECT id, 'Cấu hình ' || row_number() OVER (ORDER BY created_at, id),
+                casefold('Cấu hình ' || row_number() OVER (ORDER BY created_at, id)),
+                id, json_extract(metadata_json, '$.zone_counting'),
+                json_extract(metadata_json, '$.zone_counting_run.id'),
+                created_at, updated_at
+            FROM sources
+            WHERE json_type(metadata_json, '$.zone_counting.monitor') = 'object'
+                AND json_type(metadata_json, '$.zone_counting.config') = 'object'
+        """,
+    ),
+    (
+        "ALTER TABLE counting_profiles ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE counting_profiles ADD COLUMN runtime_json TEXT NOT NULL DEFAULT '{}'",
+        "ALTER TABLE counting_profiles ADD COLUMN deleted_at TEXT",
+    ),
 )
 
 

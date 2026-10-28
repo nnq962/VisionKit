@@ -133,9 +133,11 @@ class LauncherLifecycleTests(unittest.TestCase):
             self.process.terminate()
             self.process.wait(timeout=15)
 
-    def start(self, *, media: bool = False) -> None:
+    def start(self, *, media: bool = False, supervise: bool = False) -> None:
         """Khởi chạy launcher fixture và đợi thông báo readiness có giới hạn."""
         command = [sys.executable, str(self.root / "dev.py")]
+        if supervise:
+            command.append("--supervise")
         if not media:
             command.append("--no-media")
         for name, port in self.ports.items():
@@ -243,6 +245,32 @@ class LauncherLifecycleTests(unittest.TestCase):
         self.assertIn("Đã có một launcher", result.stderr)
         self.assertNotIn("PID", result.stdout)
         self.assertIsNone(self.process.poll())
+
+    def test_supervise_restarts_ai_without_stopping_backend_or_web(self) -> None:
+        """Chế độ dài hạn tạo PID AI mới sau crash và vẫn giữ backend/web hoạt động."""
+        self.start(supervise=True)
+        initial = self.output.read_text()
+        ai_line = next(
+            line for line in initial.splitlines() if line.startswith("[ai] PID")
+        )
+        old_pid = int(ai_line.split()[2])
+        os.kill(old_pid, signal.SIGTERM)
+        for _ in range(150):
+            text = self.output.read_text()
+            lines = [line for line in text.splitlines() if line.startswith("[ai] PID")]
+            if len(lines) >= 2:
+                break
+            time.sleep(0.1)
+        self.assertGreaterEqual(len(lines), 2, self.output.read_text())
+        self.assertNotEqual(int(lines[-1].split()[2]), old_pid)
+        self.assertIsNone(self.process.poll())
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{self.ports['backend']}/api/v1/health", timeout=5
+        ) as response:
+            self.assertEqual(response.status, 200)
+        self.process.send_signal(signal.SIGINT)
+        self.assertEqual(self.process.wait(timeout=15), 0)
+        self.assert_ports_released()
 
     def test_service_crash_stops_remaining_groups(self) -> None:
         """AI dừng giữa phiên khiến launcher báo lỗi và đóng backend/web còn lại."""

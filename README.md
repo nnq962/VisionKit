@@ -144,3 +144,96 @@ Webcam / USB now supports AI-host devices directly by OpenCV index (default 0).
 The UI notes that browser and server should run on the same machine. Check takes
 one snapshot and releases capture; Run opens the camera directly for YOLO, with
 bounded HTTP frame preview and JSON annotations. No MediaMTX is used for webcam.
+
+## Đếm hiện diện theo vùng
+
+Sidebar Analytics có hai màn riêng:
+
+- **Counting Configuration** (`/counting/configure`): tạo hoặc chọn cấu hình theo
+  tên (ví dụ “Cấu hình 1”, “Cấu hình 2”), chọn source → model → class, thông số và
+  polygon. **Lưu cấu hình** lưu tại chỗ, giữ nguyên editor/video và báo thành công;
+  **Mở giám sát** chuyển sang Monitor. Nguồn đang chạy cần dừng trước khi sửa.
+- **Counting Monitor** (`/counting/monitor`): chọn tên cấu hình đã lưu, xem số đếm theo
+  vùng, video/RTSP, trạng thái AI và bật/tắt lớp hiển thị. **Bắt đầu giám sát /
+  Chạy lại / Dừng AI** điều khiển run thật. **Cấu hình** mở màn thiết lập.
+
+Hai màn có liên kết chuyển qua lại. `/counting` và `/counting/setup` chuyển đến
+màn cấu hình. Chuyển trang không dừng AI. Video terminal hiển thị frame cuối;
+RTSP không có dữ liệu mới hiển thị “—”. Bảng luôn hiển thị tất cả vùng và dòng
+**Tổng cộng**, không loại trùng đối tượng giữa các vùng chồng nhau.
+
+Backend lưu cấu hình trong bảng SQLite `counting_profiles`, mỗi cấu hình có tên
+và ID riêng, lưu nguồn/model/class/polygon/thông số cùng ID lượt riêng. Có thể lưu
+nhiều cấu hình cùng video mà không ghi đè nhau. Tên trùng không phân biệt hoa/thường
+bị từ chối. Khi chạy, backend lấy snapshot theo ID cấu hình; chặn chạy trùng nguồn.
+Migration tự chuyển cấu hình nguồn cũ thành “Cấu hình 1”, “Cấu hình 2”,… và giữ
+con trỏ lượt cũ. Xoá/hết hạn run không xoá cấu hình đã lưu.
+
+**Chạy liên tục** nối lượt RTSP và lặp video khi kết thúc, thử lại khi AI/camera
+lỗi với backoff 2–60 giây. Worker đang chạy không gửi dữ liệu hơn 45 giây sẽ bị
+thu hồi và kết nối lại. Monitor tự tìm lượt mới qua backend; các snapshot tự nối
+cũ được dọn để không tăng dung lượng vô hạn. Việc chuyển lượt có khoảng ngắt ngắn.
+RTSP vẫn dùng lượt hữu hạn 1–240 phút nhưng tổng thời gian dịch vụ không bị giới hạn.
+
+**Tự chạy khi bật dịch vụ** chỉ dùng cùng Chạy liên tục: bật và lưu sẽ bắt đầu
+ngay, sau đó khôi phục khi backend khởi động lại. **Dừng AI** hoặc **Dừng để chỉnh
+sửa** tắt ý định chạy; trạng thái dừng được giữ qua restart cho đến khi bấm chạy
+lại. Chạy liên tục không bật tự khởi động sẽ không tự tiếp tục sau restart.
+Nguồn/model không hợp lệ được báo để chỉnh; không tạo lượt trùng trên cùng nguồn.
+Supervisor hiện dùng một tiến trình backend (một Uvicorn worker).
+
+Chạy dài hạn bằng `python3 dev.py --supervise` để launcher khởi động lại cả tiến
+trình AI/backend/web/MediaMTX bị thoát với backoff. Chế độ dev thông thường vẫn
+báo lỗi và dừng phiên khi có dịch vụ thoát. Launcher cần được khởi chạy lại sau
+khi máy khởi động; tính năng này không tự cài dịch vụ hệ điều hành.
+
+**Nhân bản** tạo tên riêng và không bật tự chạy cho bản sao. **Xoá** chỉ nhận cấu
+hình đã dừng, đưa vào thùng rác; **Hoàn tác** khôi phục mà không tự chạy AI.
+Tên trùng khi khôi phục trả lỗi để người dùng đổi tên cấu hình đang trùng.
+Chuyển cấu hình/nguồn, theo liên kết, đóng hoặc tải lại trang có thay đổi chưa lưu
+sẽ được nhắc trước. Nút **Lưu cấu hình** ở đầu trang dùng được từ mọi bước,
+với trạng thái chưa lưu/đã lưu và thông báo Sonner sau khi lưu. Có thể bấm trực
+tiếp từng bước đã đủ nguồn/model; thêm video dùng chung vùng kéo thả với YOLO
+pipeline. Khi AI đang chạy vẫn có thể chuyển các bước hoặc chọn cấu
+hình khác; vùng/thông số chỉ sửa được sau khi dừng nguồn đang đếm.
+
+Hai màn dùng chung YOLOE `.pt`,
+Model Hub, file/RTSP, MediaMTX, worker và cơ chế dừng. Bộ prompt y tế mặc định:
+`person`, `wheelchair`, `hospital stretcher`, `hospital bed`, `medical trolley`,
+`IV pole`; có thể tùy chỉnh class. Đây là số detection trong từng frame, chưa
+tracking hoặc đếm lượt vào/ra.
+
+Màn cấu hình gồm ba bước, với **Quay lại / Tiếp tục** để giữ lựa chọn:
+
+1. **Chọn source**: chuyển giữa **Source mới / Đã lưu**, tìm/lọc video hoặc RTSP
+   và xem thông tin nguồn ở bên cạnh. Nguồn mới cần lưu trước khi tiếp tục.
+2. **Chọn model**: danh sách YOLOE .pt và thông tin model dùng chung với pipeline.
+3. **Vùng và thông số**: tùy chỉnh **Class YOLOE** (mỗi dòng một class hoặc ngăn bằng
+   dấu phẩy) rồi **Áp dụng class**. Tối đa 80 class, mỗi class 80 ký tự; lưu cùng nguồn,
+   từng vùng chọn tập class riêng. Có thể dùng lại **Bộ class y tế**. Chọn khung hình, bấm **Vẽ vùng**, bấm từ 3–32 đỉnh rồi
+   **Hoàn tất vùng**. Đặt tên/màu, chọn class và kéo đỉnh để sửa; chỉnh Confidence,
+   IoU và thiết bị. **Lưu cấu hình** kiểm tra thông số và lưu vào cấu hình đang chọn.
+
+Màn giám sát tách riêng Bounding box, tên class/confidence, segmentation và điểm
+đếm. Số liệu cập nhật qua WebSocket; tải lại trang khôi phục lượt đang chạy.
+
+Điểm đếm là giữa cạnh dưới bbox, được đánh dấu chấm trắng trên video. Điểm trên
+biên thuộc vùng; các vùng chồng nhau đếm độc lập. Polygon dùng toạ độ 0–1 để resize
+và letterbox không làm lệch; tối đa 20 vùng mỗi nguồn. Backend từ chối vùng tự cắt,
+trùng đỉnh hoặc không có diện tích. Đổi tỷ lệ ảnh sẽ làm cấu hình đếm mất hiệu lực;
+đổi góc camera/crop cần người dùng vẽ lại vùng.
+
+Backend tính số đếm cho từng frame trước khi lưu/phát snapshot qua API runs.
+Frontend nhận bbox, số đếm và tiến độ qua WebSocket `/api/v1/runs/{id}/events`,
+kèm HTTP polling dự phòng khoảng 1 giây như YOLO pipeline. Video
+phát liên tục với bbox mới nhất, đặt vị trí lúc bắt đầu và dừng tại frame
+AI cuối; RTSP vẫn dùng WebRTC preview độc lập nên có thể
+trễ nhẹ so với detection. Mất kết quả live mới quá 3 giây hiển thị không khả dụng,
+không biến thành 0. Mất preview riêng không dừng việc đếm nếu AI vẫn có dữ liệu.
+Reload/chuyển trang tìm run theo nguồn từ backend, dự phòng bằng ID trong trình duyệt; inference
+vẫn chạy ở backend. Chỉ giữ snapshot mới nhất, chưa có lịch sử/thống kê/tracking.
+Giới hạn hiện tại vẫn là một worker inference đồng thời cho toàn bộ AI service.
+
+Kiểm tra: `(cd backend && uv run python -m unittest discover -s tests -q)` và
+`(cd web && npm run test:counting)`. Logic mới ở `backend/app/modules/counting/` và
+`web/src/features/zone-counting/`; không cần thay đổi module AI; migration DB chạy tự động khi backend khởi động.

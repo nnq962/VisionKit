@@ -26,7 +26,7 @@ export function ThresholdSlider({ id, label, hint, value, onChange }: {
         value={Number.isFinite(numeric) ? Math.min(1, Math.max(0, numeric)) : 0}
         onChange={(event) => onChange(event.target.value)}
         aria-describedby={`${id}-hint`}
-        className="h-8 w-full cursor-pointer accent-primary focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="block h-8 w-full cursor-pointer accent-primary focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       />
       <p id={`${id}-hint`} className="text-xs leading-5 text-muted-foreground">{hint}</p>
     </div>

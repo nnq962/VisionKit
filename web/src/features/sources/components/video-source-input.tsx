@@ -3,12 +3,17 @@ import { FilmIcon, LoaderCircleIcon, UploadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { formatBytes } from "../media-metadata";
-import type { SourceSelection } from "../use-source-selection";
+import type { VisionSource } from "../types";
 
 export function VideoSourceInput({
   selection,
+  disabled = false,
 }: {
-  selection: SourceSelection;
+  disabled?: boolean;
+  selection: {
+    source: Pick<VisionSource, "file" | "status"> | null;
+    selectFile: (file: File, kind: "video") => void | Promise<unknown>;
+  };
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -19,7 +24,11 @@ export function VideoSourceInput({
 
   function choose(files: FileList | null) {
     setError("");
-    if (!files?.length) return;
+    if (disabled || !files?.length) return;
+    if (!/\.(mp4|webm|mov|m4v|ogv)$/i.test(files[0].name)) {
+      setError("Chọn video MP4, MOV, WebM, M4V hoặc OGV.");
+      return;
+    }
     if (files.length > 1) {
       setError("Chọn một video mỗi lần.");
       return;
@@ -33,7 +42,7 @@ export function VideoSourceInput({
       <div
         onDragOver={(event) => {
           event.preventDefault();
-          setDragging(true);
+          if (!disabled) setDragging(true);
         }}
         onDragLeave={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null))
@@ -61,20 +70,24 @@ export function VideoSourceInput({
                 {formatBytes(file.size)} ·{" "}
                 {loading
                   ? "Đang đọc…"
-                  : source.status === "error"
+                  : source?.status === "error"
                     ? "Không đọc được"
                     : "Đã chọn"}
               </p>
               <div className="flex flex-wrap gap-2 pt-2">
                 <Button
+                  type="button"
+                  disabled={disabled}
                   variant="outline"
                   size="sm"
                   onClick={() => input.current?.click()}
                 >
                   Đổi video
                 </Button>
-                {source.status === "error" && (
+                {source?.status === "error" && (
                   <Button
+                    type="button"
+                    disabled={disabled}
                     variant="ghost"
                     size="sm"
                     onClick={() => void selection.selectFile(file, "video")}
@@ -95,7 +108,7 @@ export function VideoSourceInput({
             <p className="text-xs text-muted-foreground">
               MP4, MOV, WebM, M4V, OGV
             </p>
-            <Button variant="outline" onClick={() => input.current?.click()}>
+            <Button type="button" disabled={disabled} variant="outline" onClick={() => input.current?.click()}>
               Chọn video
             </Button>
           </div>
@@ -104,6 +117,7 @@ export function VideoSourceInput({
           ref={input}
           id="video-file"
           type="file"
+          disabled={disabled}
           className="sr-only"
           accept=".mp4,.webm,.mov,.m4v,.ogv"
           onChange={(event) => {

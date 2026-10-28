@@ -140,6 +140,9 @@ class Service:
     ) -> None:
         """Mở log xoay vòng và process group riêng; không nhận quyền quản lý process cũ."""
         self.name = name
+        self.command = command
+        self.log_dir = log_dir
+        self.started_at = time.monotonic()
         self.cleanup_command = cleanup_command
         self.env = env
         self.cwd = cwd
@@ -246,6 +249,45 @@ def shutdown(services: list[Service]) -> None:
                 )
 
 
+def supervise_services(
+    services: list[Service], retry_at: dict[str, float], failures: dict[str, int]
+) -> None:
+    """Khởi động lại process sở hữu bị thoát, có backoff; không đụng process bên ngoài.
+
+    Chỉ dùng sau startup thành công. Backend giữ ý định chạy cấu hình trong DB để
+    tự phục hồi sau khi process được tạo lại. Mỗi lần retry dọn group cũ trước.
+    """
+    now = time.monotonic()
+    for index, child in enumerate(services):
+        if child.process.poll() is None:
+            child.check()
+            if now - child.started_at >= 60:
+                failures.pop(child.name, None)
+            continue
+        if child.name not in retry_at:
+            failures[child.name] = min(failures.get(child.name, 0) + 1, 5)
+            delay = min(30, 2 ** failures[child.name])
+            retry_at[child.name] = now + delay
+            print(f"[{child.name}] Đã dừng; khởi động lại sau {delay}s.", flush=True)
+            continue
+        if now < retry_at[child.name]:
+            continue
+        shutdown([child])
+        try:
+            services[index] = Service(
+                child.name,
+                child.command,
+                child.cwd,
+                child.env,
+                child.log_dir,
+                child.cleanup_command,
+            )
+            retry_at.pop(child.name, None)
+        except OSError:
+            retry_at[child.name] = now + 30
+            print(f"[{child.name}] Chưa thể khởi động; thử lại sau 30s.", flush=True)
+
+
 def wait_ready(
     services: list[Service],
     url: str,
@@ -278,6 +320,11 @@ def main() -> int:
         "--stop",
         action="store_true",
         help="Dừng phiên launcher của thư mục dữ liệu này.",
+    )
+    parser.add_argument(
+        "--supervise",
+        action="store_true",
+        help="Tự khởi động lại dịch vụ bị thoát để chạy dài hạn.",
     )
     parser.add_argument("--backend-port", type=int)
     parser.add_argument("--ai-port", type=int)
@@ -563,9 +610,14 @@ def main() -> int:
             f"Backend: {env['VISIONKIT_API_URL']}/docs\nAI: {env['VISIONKIT_AI_URL']}\nCtrl+C để dừng tất cả dịch vụ của phiên này.",
             flush=True,
         )
+        retry_at: dict[str, float] = {}
+        failures: dict[str, int] = {}
         while not stopping.is_set():
-            for child in services:
-                child.check()
+            if args.supervise:
+                supervise_services(services, retry_at, failures)
+            else:
+                for child in services:
+                    child.check()
             stopping.wait(0.5)
         raise KeyboardInterrupt
     except KeyboardInterrupt:

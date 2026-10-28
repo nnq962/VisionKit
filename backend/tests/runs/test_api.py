@@ -59,16 +59,19 @@ def video_bytes() -> bytes:
 class FrameStream(httpx.AsyncByteStream):
     """Phát hai frame và terminal, có thể bỏ terminal để mô phỏng kết nối đứt."""
 
-    def __init__(self, delay: float, partial: bool) -> None:
+    def __init__(
+        self, delay: float, partial: bool, detections: list | None = None
+    ) -> None:
         """Giữ độ trễ và cờ EOF sớm, không tạo task hoặc mở kết nối."""
         self.delay = delay
         self.partial = partial
+        self.detections = detections or []
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
         """Yield NDJSON từng frame, gồm một frame rỗng để không giữ bbox cũ."""
         result = {
             "sourceSize": {"width": 160, "height": 90},
-            "detections": [],
+            "detections": self.detections,
             "classifications": [],
             "device": "cpu",
             "elapsedMs": 100,
@@ -114,6 +117,7 @@ class RunTests(unittest.TestCase):
             ai_url="http://ai.test",
         )
         self.video_partial = False
+        self.video_detections = []
         self.ai_logs = LogBuffer("ai")
         self.inference_headers = []
         self.inference_payloads = []
@@ -170,7 +174,10 @@ class RunTests(unittest.TestCase):
             )
         if request.url.path.endswith("/video"):
             return httpx.Response(
-                200, stream=FrameStream(self.delay, self.video_partial)
+                200,
+                stream=FrameStream(
+                    self.delay, self.video_partial, self.video_detections
+                ),
             )
         await anyio.sleep(self.delay)
         if self.ai_fail:
@@ -260,6 +267,482 @@ class RunTests(unittest.TestCase):
         model.variant.format = "onnx"
         with patch.object(self.app.state.models, "available", return_value=model):
             self.assertEqual(self.start(options=json.dumps(options)).status_code, 422)
+
+    def service_profile(self, *, auto_start: bool = False) -> tuple[str, dict]:
+        """Tạo cấu hình video liên tục trong DB test và tạm dừng vòng nền để tick xác định."""
+        from uuid import uuid4
+
+        self.app.state.counting_supervisor.paused = True
+        self.app.state.models.repository.configure(self.model_id, "yoloe", "segment")
+        source = self.client.post(
+            "/api/v1/sources/upload",
+            data={"kind": "video", "name": "Service video"},
+            files={"file": ("clip.mp4", video_bytes())},
+        ).json()
+        signature = self.client.get(f"/api/v1/counting/sources/{source['id']}").json()[
+            "source_signature"
+        ]
+        body = {
+            "name": "Service profile",
+            "source_id": source["id"],
+            "source_signature": signature,
+            "config": {
+                "reference_width": 160,
+                "reference_height": 90,
+                "classes": ["person"],
+                "zones": [
+                    {
+                        "id": str(uuid4()),
+                        "name": "A",
+                        "classes": ["person"],
+                        "points": [[0, 0], [1, 0], [1, 1], [0, 1]],
+                    }
+                ],
+            },
+            "monitor": {
+                "model_id": self.model_id,
+                "continuous": True,
+                "auto_start": auto_start,
+                "duration_seconds": 60,
+            },
+        }
+        response = self.client.post("/api/v1/counting/profiles", json=body)
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()["id"], body
+
+    def test_continuous_rollover_stop_and_recoverable_delete(self) -> None:
+        """Nối video, dọn snapshot cũ, Dừng bền vững và nhân bản/xoá/hoàn tác không chạy AI."""
+        pid, body = self.service_profile()
+        endpoint = f"/api/v1/counting/profiles/{pid}"
+        run = self.client.post(endpoint + "/runs").json()
+        self.wait(run["id"])
+        self.client.portal.call(self.app.state.counting_supervisor.tick)
+        restarted = self.client.get(endpoint).json()
+        self.assertTrue(restarted["enabled"])
+        self.assertNotEqual(restarted["current_run_id"], run["id"])
+        self.assertEqual(self.client.get(f"/api/v1/runs/{run['id']}").status_code, 404)
+        self.assertEqual(self.client.delete(endpoint).status_code, 409)
+        copied = self.client.post(endpoint + "/duplicate").json()
+        self.assertFalse(copied["enabled"])
+        self.assertFalse(copied["monitor"]["auto_start"])
+        self.assertIsNone(copied["current_run_id"])
+        self.assertEqual(copied["config"], restarted["config"])
+        self.assertNotEqual(
+            self.client.post(endpoint + "/duplicate").json()["name"], copied["name"]
+        )
+        stopped = self.client.post(endpoint + "/stop").json()
+        self.assertFalse(stopped["enabled"])
+        stopped_id = stopped["current_run_id"]
+        self.client.portal.call(self.app.state.counting_supervisor.tick)
+        self.assertEqual(self.client.get(endpoint).json()["current_run_id"], stopped_id)
+        deleted = self.client.delete(endpoint)
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertEqual(self.client.get(endpoint).status_code, 404)
+        restored = self.client.post(endpoint + "/restore")
+        self.assertEqual(restored.status_code, 200, restored.text)
+        self.assertFalse(restored.json()["enabled"])
+        self.assertEqual(restored.json()["name"], body["name"])
+        self.assertEqual(
+            self.client.put(
+                endpoint,
+                json={
+                    **body,
+                    "monitor": {
+                        **body["monitor"],
+                        "continuous": False,
+                        "auto_start": True,
+                    },
+                },
+            ).status_code,
+            422,
+        )
+
+    def test_continuous_failure_backoff_and_watchdog(self) -> None:
+        """Lỗi EOF thử lại có backoff; worker im lặng bị thu hồi, Dừng huỷ cả lần thử kế."""
+        from datetime import datetime, timedelta, timezone
+
+        pid, _ = self.service_profile()
+        endpoint = f"/api/v1/counting/profiles/{pid}"
+        supervisor = self.app.state.counting_supervisor
+        clock = [100.0]
+        supervisor.clock = lambda: clock[0]
+        self.video_partial = True
+        initial = self.client.post(endpoint + "/runs").json()
+        self.assertEqual(self.wait(initial["id"])["status"], "failed")
+        self.client.portal.call(supervisor.tick)
+        self.assertEqual(
+            self.client.get(endpoint).json()["runtime"]["phase"], "retrying"
+        )
+        self.client.portal.call(supervisor.tick)
+        self.assertEqual(
+            self.client.get(endpoint).json()["current_run_id"], initial["id"]
+        )
+        self.video_partial = False
+        self.delay = 10
+        clock[0] += 2
+        self.client.portal.call(supervisor.tick)
+        next_id = self.client.get(endpoint).json()["current_run_id"]
+        self.assertNotEqual(next_id, initial["id"])
+        time.sleep(0.05)
+        old = self.app.state.runs.get(next_id).model_copy(
+            update={
+                "status": "running",
+                "updated_at": (
+                    datetime.now(timezone.utc) - timedelta(seconds=60)
+                ).isoformat(),
+            }
+        )
+        self.app.state.runs.latest[next_id] = old
+        self.client.portal.call(supervisor.tick)
+        self.assertEqual(
+            self.client.get(endpoint).json()["runtime"]["phase"], "retrying"
+        )
+        self.assertEqual(
+            self.client.get(f"/api/v1/runs/{next_id}").json()["status"], "cancelled"
+        )
+        self.client.post(endpoint + "/stop")
+        clock[0] += 100
+        self.client.portal.call(supervisor.tick)
+        self.assertFalse(self.client.get(endpoint).json()["enabled"])
+        self.assertEqual(self.client.get(endpoint).json()["current_run_id"], next_id)
+
+    def test_service_stop_and_watchdog_reclaim_run_after_source_changes(self) -> None:
+        """Nguồn đổi chữ ký vẫn thu hồi được worker cũ dù API không trả con trỏ cũ."""
+        pid, body = self.service_profile()
+        endpoint = f"/api/v1/counting/profiles/{pid}"
+        self.delay = 10
+        database = self.app.state.sources.repository.database
+        source_id = body["source_id"]
+        original_metadata = dict(self.app.state.sources.get(source_id).metadata)
+        for supervisor_first in [False, True]:
+            with database.connection() as connection:
+                connection.execute(
+                    "UPDATE sources SET metadata_json=? WHERE id=?",
+                    (json.dumps(original_metadata), source_id),
+                )
+            record = self.client.post(endpoint + "/runs").json()
+            with database.connection() as connection:
+                connection.execute(
+                    "UPDATE sources SET metadata_json=? WHERE id=?",
+                    (json.dumps({**original_metadata, "width": 320}), source_id),
+                )
+            self.assertTrue(self.client.get(endpoint).json()["stale"])
+            self.assertIsNone(self.client.get(endpoint).json()["current_run_id"])
+            if supervisor_first:
+                self.client.portal.call(self.app.state.counting_supervisor.tick)
+            self.client.post(endpoint + "/stop")
+            self.assertEqual(
+                self.client.get(f"/api/v1/runs/{record['id']}").json()["status"],
+                "cancelled",
+            )
+            self.assertFalse(self.client.get(endpoint).json()["enabled"])
+
+    def test_continuous_boot_recovery_and_source_exclusivity(self) -> None:
+        """Startup khôi phục ý định bật, giữ Dừng qua restart và chặn hai dịch vụ cùng nguồn."""
+        pid, body = self.service_profile(auto_start=True)
+        endpoint = f"/api/v1/counting/profiles/{pid}"
+        supervisor = self.app.state.counting_supervisor
+        self.assertTrue(self.client.get(endpoint).json()["enabled"])
+        self.client.portal.call(supervisor.tick)
+        original_id = self.client.get(endpoint).json()["current_run_id"]
+        self.wait(original_id)
+        copy = self.client.post(endpoint + "/duplicate").json()
+        conflict = self.client.post(f"/api/v1/counting/profiles/{copy['id']}/runs")
+        self.assertEqual(conflict.status_code, 409, conflict.text)
+        # Mô phỏng tiến trình backend mới bằng lifespan thật sau khi đóng app cũ.
+        self.client.__exit__(None, None, None)
+        with TestClient(create_app(self.settings)) as reopened:
+            for _ in range(100):
+                recovered = reopened.get(endpoint).json()
+                if recovered["current_run_id"] != original_id:
+                    break
+                time.sleep(0.02)
+            self.assertTrue(recovered["enabled"])
+            self.assertNotEqual(recovered["current_run_id"], original_id)
+            reopened.post(endpoint + "/stop")
+        with TestClient(create_app(self.settings)) as reopened:
+            stopped = reopened.get(endpoint).json()
+            self.assertFalse(stopped["enabled"])
+            self.assertEqual(stopped["current_run_id"], recovered["current_run_id"])
+
+    def test_named_counting_profiles_are_independent_and_run_saved_snapshot(
+        self,
+    ) -> None:
+        """Hai cấu hình cùng video giữ vùng/ngưỡng/lượt riêng, lưu không sửa run cũ."""
+        from uuid import uuid4
+
+        source = self.client.post(
+            "/api/v1/sources/upload",
+            data={"kind": "video", "name": "Profile video"},
+            files={"file": ("clip.mp4", video_bytes())},
+        ).json()
+        base = "/api/v1/counting/profiles"
+        signature = self.client.get(f"/api/v1/counting/sources/{source['id']}").json()[
+            "source_signature"
+        ]
+        body = {
+            "name": "  Cấu hình 1  ",
+            "source_id": source["id"],
+            "source_signature": signature,
+            "config": {
+                "reference_width": 160,
+                "reference_height": 90,
+                "classes": ["person"],
+                "zones": [
+                    {
+                        "id": str(uuid4()),
+                        "name": "A",
+                        "classes": ["person"],
+                        "points": [[0, 0], [1, 0], [1, 1], [0, 1]],
+                    }
+                ],
+            },
+            "monitor": {
+                "model_id": self.model_id,
+                "options": {"conf": 0.31, "iou": 0.6},
+                "duration_seconds": 3600,
+            },
+        }
+        first = self.client.post(base, json=body)
+        self.assertEqual(first.status_code, 201, first.text)
+        first_id = first.json()["id"]
+        self.assertEqual(first.json()["name"], "Cấu hình 1")
+        second = self.client.post(base, json={**body, "name": "Cấu hình 2"})
+        self.assertEqual(second.status_code, 201, second.text)
+        second_id = second.json()["id"]
+        self.assertNotEqual(first_id, second_id)
+        self.assertEqual(len(self.client.get(base).json()), 2)
+        for name in ["", "   ", "x\ny"]:
+            self.assertEqual(
+                self.client.post(base, json={**body, "name": name}).status_code, 422
+            )
+        self.assertEqual(
+            self.client.post(base, json={**body, "name": "cẤU HÌNH 1"}).status_code, 409
+        )
+        self.assertEqual(
+            self.client.put(
+                f"{base}/{second_id}", json={**body, "name": "Cấu hình 1"}
+            ).status_code,
+            409,
+        )
+        self.assertEqual(
+            self.client.post(
+                base, json={**body, "name": "stale", "source_signature": "0" * 64}
+            ).status_code,
+            409,
+        )
+        self.assertEqual(self.client.post(f"{base}/{first_id}/runs").status_code, 422)
+        self.app.state.models.repository.configure(self.model_id, "yoloe", "segment")
+        self.delay = 0.3
+        started = self.client.post(f"{base}/{first_id}/runs")
+        self.assertEqual(started.status_code, 202, started.text)
+        run_id = started.json()["id"]
+        self.assertEqual(self.client.post(f"{base}/{second_id}/runs").status_code, 409)
+        self.assertIsNone(
+            self.client.get(f"{base}/{second_id}").json()["current_run_id"]
+        )
+        self.assertEqual(
+            self.client.get(f"{base}/{first_id}").json()["current_run_id"], run_id
+        )
+        changed = {
+            **body,
+            "name": "Cấu hình 1 sửa",
+            "monitor": {**body["monitor"], "options": {"conf": 0.8}},
+        }
+        updated = self.client.put(f"{base}/{first_id}", json=changed)
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(
+            self.client.get(f"{base}/{second_id}").json()["monitor"]["options"]["conf"],
+            0.31,
+        )
+        self.assertEqual(self.wait(run_id)["options"]["conf"], 0.31)
+        with TestClient(create_app(self.settings)) as reopened:
+            self.assertEqual(
+                reopened.get(f"{base}/{first_id}").json()["name"], "Cấu hình 1 sửa"
+            )
+            self.assertEqual(len(reopened.get(base).json()), 2)
+        second_run = self.client.post(f"{base}/{second_id}/runs")
+        self.assertEqual(second_run.status_code, 202, second_run.text)
+        self.wait(second_run.json()["id"])
+        self.assertEqual(
+            self.client.get(f"{base}/{first_id}").json()["current_run_id"], run_id
+        )
+        metadata = dict(self.app.state.sources.get(source["id"]).metadata)
+        metadata["width"] = 320
+        with self.app.state.sources.repository.database.connection() as connection:
+            connection.execute(
+                "UPDATE sources SET metadata_json=? WHERE id=?",
+                (json.dumps(metadata), source["id"]),
+            )
+        self.assertTrue(self.client.get(f"{base}/{first_id}").json()["stale"])
+        self.assertEqual(self.client.post(f"{base}/{first_id}/runs").status_code, 409)
+
+    def test_counting_video_snapshot_persistence_and_model_validation(self) -> None:
+        """Lưu vùng theo nguồn, snapshot run và không gửi cấu hình đếm sang AI."""
+        from uuid import uuid4
+
+        from app.modules.counting.schemas import CLASSES
+
+        source = self.client.post(
+            "/api/v1/sources/upload",
+            data={"kind": "video", "name": "Counting video"},
+            files={"file": ("clip.mp4", video_bytes())},
+        ).json()
+        source_id = source["id"]
+        endpoint = f"/api/v1/counting/sources/{source_id}"
+        current = self.client.get(endpoint).json()
+        self.assertIsNone(current["config"])
+        config = {
+            "reference_width": 160,
+            "reference_height": 90,
+            "zones": [
+                {
+                    "id": str(uuid4()),
+                    "name": "Full frame",
+                    "points": [[0, 0], [1, 0], [1, 1], [0, 1]],
+                }
+            ],
+        }
+        payload = {"source_signature": current["source_signature"], "config": config}
+        saved = self.client.put(endpoint, json=payload)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(
+            self.client.get(endpoint).json()["config"]["zones"][0]["name"], "Full frame"
+        )
+        body = {**payload, "source_id": source_id, "model_id": self.model_id}
+        self.assertEqual(
+            self.client.post("/api/v1/counting/runs", json=body).status_code, 422
+        )
+        self.app.state.models.repository.configure(self.model_id, "yoloe", "segment")
+        self.video_detections = [
+            {"label": "person", "bbox": [10, 10, 40, 80]},
+            {"label": "wheelchair", "bbox": [20, 20, 60, 85]},
+        ]
+        response = self.client.post("/api/v1/counting/runs", json=body)
+        self.assertEqual(response.status_code, 202, response.text)
+        run_id = response.json()["id"]
+        run = self.wait(run_id)
+        self.assertEqual(run["status"], "completed", run)
+        self.assertTrue(run["counts"]["valid"])
+        self.assertEqual(
+            run["counts"]["regions"][0]["counts"],
+            {**dict.fromkeys(CLASSES, 0), "person": 1, "wheelchair": 1},
+        )
+        self.assertEqual(
+            self.inference_payloads[-1]["options"]["text_prompts"], list(CLASSES)
+        )
+        self.assertNotIn("counting", self.inference_payloads[-1])
+        changed = {**config, "zones": []}
+        self.assertEqual(
+            self.client.put(endpoint, json={**payload, "config": changed}).status_code,
+            200,
+        )
+        self.assertEqual(
+            len(self.client.get(f"/api/v1/runs/{run_id}").json()["counting"]["zones"]),
+            1,
+        )
+        with TestClient(create_app(self.settings)) as reopened:
+            self.assertEqual(reopened.get(endpoint).json()["config"]["zones"], [])
+            self.assertTrue(
+                reopened.get(f"/api/v1/runs/{run_id}").json()["counts"]["valid"]
+            )
+        self.assertEqual(
+            self.client.post(
+                "/api/v1/counting/runs", json={**body, "config": changed}
+            ).status_code,
+            422,
+        )
+        self.assertEqual(
+            self.client.put(
+                endpoint, json={**payload, "source_signature": "a" * 64}
+            ).status_code,
+            409,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/v1/counting/runs", json={**body, "source_signature": "a" * 64}
+            ).status_code,
+            409,
+        )
+        custom = {
+            **config,
+            "classes": ["laptop", "cell phone"],
+            "zones": [{**config["zones"][0], "classes": ["laptop"]}],
+        }
+        self.assertEqual(
+            self.client.put(endpoint, json={**payload, "config": custom}).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.get(endpoint).json()["config"]["classes"], custom["classes"]
+        )
+        self.video_detections = [{"label": "laptop", "bbox": [10, 10, 40, 80]}]
+        created = self.client.post(
+            "/api/v1/counting/runs",
+            json={
+                **body,
+                "config": custom,
+                "options": {"text_prompts": ["dog"], "classes": [0]},
+            },
+        )
+        self.assertEqual(created.status_code, 202, created.text)
+        custom_run = self.wait(created.json()["id"])
+        self.assertEqual(custom_run["status"], "completed", custom_run)
+        self.assertEqual(custom_run["counts"]["regions"][0]["counts"], {"laptop": 1})
+        self.assertEqual(
+            self.inference_payloads[-1]["options"]["text_prompts"], custom["classes"]
+        )
+        self.assertIsNone(self.inference_payloads[-1]["options"]["classes"])
+        self.client.put(endpoint, json={**payload, "config": changed})
+        snapshot = self.client.get(f"/api/v1/runs/{custom_run['id']}").json()
+        self.assertEqual(snapshot["counting"]["classes"], custom["classes"])
+        self.assertEqual(snapshot["counting"]["zones"][0]["classes"], ["laptop"])
+        monitor = {
+            "model_id": self.model_id,
+            "options": {"conf": 0.4, "iou": 0.6, "device": "cpu", "max_fps": 8},
+            "duration_seconds": 7200,
+        }
+        monitored = self.client.put(
+            endpoint, json={**payload, "config": custom, "monitor": monitor}
+        )
+        self.assertEqual(monitored.status_code, 200, monitored.text)
+        self.assertEqual(monitored.json()["monitor"]["model_id"], self.model_id)
+        self.assertEqual(monitored.json()["monitor"]["options"]["conf"], 0.4)
+        self.assertEqual(monitored.json()["current_run_id"], custom_run["id"])
+        self.assertEqual(monitored.json()["monitor"]["duration_seconds"], 7200)
+        # Luồng cũ chỉ lưu vùng vẫn giữ thiết lập giám sát và ID lượt hiện tại.
+        self.client.put(endpoint, json={**payload, "config": changed})
+        persisted = self.client.get(endpoint).json()
+        self.assertEqual(persisted["monitor"], monitored.json()["monitor"])
+        self.assertEqual(persisted["current_run_id"], custom_run["id"])
+        with TestClient(create_app(self.settings)) as reopened:
+            self.assertEqual(
+                reopened.get(endpoint).json()["monitor"], persisted["monitor"]
+            )
+        for seconds in (0, 61, 14460):
+            invalid = self.client.put(
+                endpoint,
+                json={**payload, "monitor": {**monitor, "duration_seconds": seconds}},
+            )
+            self.assertEqual(invalid.status_code, 422, invalid.text)
+        self.assertEqual(
+            self.client.get(endpoint).json()["monitor"], persisted["monitor"]
+        )
+        # Đổi tên không đổi hệ toạ độ; thay nội dung nguồn làm cấu hình cũ hết hiệu lực.
+        self.client.patch(f"/api/v1/sources/{source_id}", json={"name": "Renamed"})
+        self.assertEqual(
+            self.client.get(endpoint).json()["source_signature"],
+            current["source_signature"],
+        )
+        database = self.app.state.sources.repository.database
+        with database.connection() as connection:
+            connection.execute(
+                "UPDATE sources SET location=? WHERE id=?", ("changed.mp4", source_id)
+            )
+        self.assertTrue(self.client.get(endpoint).json()["stale"])
+        self.assertIsNone(self.client.get(endpoint).json()["config"])
+        self.assertIsNone(self.client.get(endpoint).json()["monitor"])
+        self.assertIsNone(self.client.get(endpoint).json()["current_run_id"])
 
     def test_unsaved_source_result_preview_and_websocket(self) -> None:
         """Ảnh chạy không vào thư viện, kết quả giữ trong DB và có snapshot WS cùng preview."""
