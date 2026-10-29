@@ -98,7 +98,7 @@ Videos are not transcoded. Browser playback depends on codec support; MP4/H.264 
 
 ## Model catalog and downloads
 
-The Model Hub uses a curated catalog of 83 `.pt` weights across YOLO26, YOLO11, YOLOv8, YOLOE-26 and YOLOE-11. The checked-in manifest at `app/modules/models/catalog/ultralytics.json` pins official `ultralytics/assets` release `v8.4.0`, URLs, byte sizes and GitHub SHA-256 digests. Update the manifest deliberately when adopting a new release; the backend does not import Ultralytics or PyTorch. Downloading verifies the file's bytes and checksum, not runtime compatibility with the AI module.
+The Model Hub uses a curated catalog of 96 `.pt` weights across YOLO26, YOLO11, YOLOv8, YOLOE-26, YOLOE-11, YOLO12, YOLOv10 and YOLOE-v8. The checked-in manifest at `app/modules/models/catalog/ultralytics.json` pins official `ultralytics/assets` release `v8.4.0`, URLs, byte sizes and GitHub SHA-256 digests. Update the manifest deliberately when adopting a new release; the backend does not import Ultralytics or PyTorch. Downloading verifies the file's bytes and checksum, not runtime compatibility with the AI module.
 
 | Method | Path | Behaviour |
 |---|---|---|
@@ -449,3 +449,12 @@ worker cancellation if needed, removes only that run's snapshot/thumbnail,
 webcam RAM frame and JSON record, and leaves saved source/model files untouched.
 The endpoint is idempotent (204 for an already removed run). The web calls it
 before releasing its own preview/cache and resetting the source picker.
+
+### YOLOE text prompt
+
+Các endpoint tạo run nhận `options.text_prompts` (mảng 1–80 tên vật thể, mỗi tên
+1–80 ký tự, không trùng không phân biệt hoa thường). Chỉ dùng với YOLOE detect/segment
+`.pt`, không kết hợp `options.classes`. Ví dụ `{"text_prompts":["person","car","laptop","cell phone"]}`.
+Prompt được lưu trong run và chuyển nguyên thứ tự sang AI cho mọi loại nguồn;
+nhãn/class ID trong kết quả do prompt của run quyết định. Metadata model giữ nguyên.
+Xem setup text encoder trong `ai/README.md` trước khi chạy lần đầu.

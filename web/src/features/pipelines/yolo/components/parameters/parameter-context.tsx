@@ -1,3 +1,4 @@
+import { parseTextPrompts } from "../../text-prompts";
 import type { StoredModel } from "@/features/models/api";
 import { modelTaskLabel } from "@/features/models/catalog";
 import { sourceLabel, type VisionSource } from "@/features/sources/types";
@@ -64,7 +65,9 @@ export function ParameterContext({
           {deviceLabels[parameters.device]}
         </p>
         <p className="text-xs text-muted-foreground">
-          {parameters.classMode === "all"
+          {parameters.textPromptEnabled
+            ? `${parseTextPrompts(parameters.textPrompts).length} vật thể theo text prompt`
+            : parameters.classMode === "all"
             ? "Toàn bộ class"
             : `${parameters.classes.length} class đã chọn`}
         </p>

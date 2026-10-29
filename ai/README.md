@@ -49,7 +49,7 @@ Metadata phân biệt `family` (YOLO/YOLOE), `model_series` (YOLO26/YOLO11/YOLOv
 
 Ultralytics handles `.pt` and ONNX; pinned `onnxruntime<1.24` retains Python 3.10 wheel support. HEIC/HEIF uses pillow-heif; input decoding applies EXIF orientation before inference. PT uses the restricted loader with no unsafe fallback or auto-install/download. ONNX external tensors and fixed batch other than 1 are rejected. Auto chooses CUDA/MPS/CPU for PT; ONNX currently runs CPU. Explicit unavailable devices return an actionable error rather than silently falling back. The subprocess is not an OS sandbox; keep this local service for trusted model artifacts.
 
-Results normalize detections/pose keypoints into original image pixel coordinates for the reusable web canvas. Classification returns top5; segmentation/OBB additionally retain polygons. Pose points are rendered without assuming custom skeleton ordering. YOLOE models requiring text/visual prompts are not configured by this MVP. Video files use the file streaming endpoint below; RTSP inference uses its separate internal stream endpoint. Local webcam inference is available through the dedicated webcam endpoint below.
+Results normalize detections/pose keypoints into original image pixel coordinates for the reusable web canvas. Classification returns top5; segmentation/OBB additionally retain polygons. Pose points are rendered without assuming custom skeleton ordering. YOLOE text prompts are supported for unfused text/visual PT checkpoints; visual prompting is not yet available. Video files use the file streaming endpoint below; RTSP inference uses its separate internal stream endpoint. Local webcam inference is available through the dedicated webcam endpoint below.
 
 ## Video file inference
 
@@ -155,3 +155,30 @@ running AI; OS camera permission must be granted to its Python/launcher process.
 Webcam checks and webcam inference request a one-second capture warmup, dropping
 initial frames before using a snapshot/result. Warmup is bounded and releases
 capture on failure; other reader consumers keep the previous zero-warmup default.
+
+## YOLOE text prompt
+
+Chọn model YOLOE `.pt` trong pipeline chung. Bước Thông số có 22 vật thể gợi ý
+bằng tiếng Việt và ô sửa prompt tiếng Anh (phân cách bằng dấu phẩy/xuống dòng).
+Ví dụ: `person, car, motorcycle, laptop, computer monitor, cell phone`.
+Run lưu `options.text_prompts` theo thứ tự; class ID và nhãn kết quả dựa trên
+prompt của run, không dựa trên class metadata cũ. Không kết hợp với `classes`.
+Giới hạn 1–80 prompt, mỗi prompt 1–80 ký tự, không trùng (không phân biệt hoa thường).
+
+Chuẩn bị môi trường một lần, trước khi chạy (có Internet):
+
+```bash
+cd ai
+uv sync --locked
+uv run python -m app.inference.setup_yoloe --series all
+```
+
+`26` dùng `mobileclip2_b.ts`, `11` (cũng dùng cho YOLOE-v8) dùng `mobileclip_blt.ts`.
+Mặc định setup chỉ tải `--series 26`; `all` chuẩn bị cả hai. Encoder nằm trong
+`data/yoloe/`, hoặc `VISIONKIT_YOLOE_ENCODERS_PATH`; không vào thư viện weights/DB.
+Tokenizer CLIP được ghim commit trong uv.lock. Inference chỉ nạp encoder local,
+không tự cài dependency/tải encoder. Thiếu asset trả lỗi hướng dẫn setup.
+Model/encoder chạy cùng thiết bị; mỗi worker tạo embedding một lần rồi nhả encoder
+trước khi xử lý ảnh hoặc vòng lặp video/RTSP/webcam. Đổi prompt phải tạo run mới;
+không thay đổi checkpoint hay metadata trên đĩa. Không có embedding cache xuyên run.
+ONNX, prompt-free hoặc checkpoint đã fuse không hỗ trợ đổi text prompt.

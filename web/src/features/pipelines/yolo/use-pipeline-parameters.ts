@@ -39,6 +39,7 @@ export function usePipelineParameters(model: StoredModel | null) {
     const saved = JSON.parse(raw || "null");
     if (saved && typeof saved === "object") {
       for (const name of [
+        "textPrompts",
         "confidence",
         "iou",
         "imageSize",

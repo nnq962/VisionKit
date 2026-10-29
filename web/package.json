@@ -10,7 +10,8 @@
     "test:logs": "node --test tests/log-stream.test.mjs tests/window-geometry.test.mjs",
     "test:inference": "node --test tests/inference-restoration.test.mjs",
     "test:streams": "node --test tests/video-stream.test.mjs tests/rtsp-configuration.test.mjs",
-    "test:overlay": "node --test tests/vision-overlay.test.mjs",
+    "test:overlay": "node --test tests/vision-overlay.test.mjs tests/segmentation.test.mjs",
+    "test:yoloe": "node --test tests/yoloe.test.mjs",
     "test:youtube": "node --test tests/youtube.test.mjs"
   },
   "dependencies": {

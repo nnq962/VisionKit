@@ -50,6 +50,7 @@ function RunWorkspaceContent({
     );
   const overlayOptions = {
     showBoxes: preferences.boxes,
+    showSegments: model?.task === "segment" && preferences.segments,
     showLabels: preferences.boxes && preferences.labels,
     showKeypoints: preferences.keypoints,
     showSkeleton: preferences.skeleton,
@@ -214,6 +215,7 @@ function RunWorkspaceContent({
             preferences={preferences}
             onChange={updateOverlay}
             pose={pose}
+            segment={model?.task === "segment"}
             canConnect={canConnect}
             classify={model?.task === "classify"}
           />

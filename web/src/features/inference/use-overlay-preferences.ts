@@ -3,12 +3,14 @@ import { useState, useSyncExternalStore } from "react";
 
 export type OverlayPreferences = {
   boxes: boolean;
+  segments: boolean;
   keypoints: boolean;
   skeleton: boolean;
   labels: boolean;
 };
 const defaults: OverlayPreferences = {
   boxes: true,
+  segments: true,
   keypoints: true,
   skeleton: true,
   labels: true,

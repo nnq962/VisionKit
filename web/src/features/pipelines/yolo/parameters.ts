@@ -1,3 +1,4 @@
+import { validateTextPrompts } from "./text-prompts";
 import type { StoredModel } from "@/features/models/api";
 import type { VisionSource } from "@/features/sources/types";
 import { defaultParameters, type YoloParameters } from "./types";
@@ -45,6 +46,7 @@ export function parametersForModel(model: StoredModel | null): YoloParameters {
   return {
     ...defaultParameters,
     classes: [],
+    textPromptEnabled: Boolean(model?.familyId.startsWith("yoloe")),
     imageSize: modelImageSize(model),
   };
 }
@@ -53,6 +55,11 @@ export function validateParameters(
   model: StoredModel | null,
   source: VisionSource | null,
 ): string {
+  if (model?.familyId.startsWith("yoloe")) {
+    if (model.format !== "pt") return "Text prompt cần model YOLOE .pt, không dùng ONNX.";
+    const error = validateTextPrompts(parameters.textPrompts);
+    if (error) return error;
+  }
   const classify = model?.task === "classify";
   if (
     !classify &&
@@ -109,6 +116,7 @@ export function validateParameters(
   const names = model?.inspection.metadata?.names ?? {};
   if (
     !classify &&
+    !model?.familyId.startsWith("yoloe") &&
     parameters.classMode === "selected" &&
     (!parameters.classes.length ||
       parameters.classes.some((id) => !(id in names)))

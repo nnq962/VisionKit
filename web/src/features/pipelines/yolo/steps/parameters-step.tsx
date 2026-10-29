@@ -1,3 +1,4 @@
+import { TextPromptInput } from "../components/parameters/text-prompt-input";
 import { ChevronDownIcon, RotateCcwIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -162,7 +163,10 @@ export function ParametersStep({
             </div>
           </div>
         )}
-        {!classify && (
+        {parameters.textPromptEnabled && (
+          <TextPromptInput value={parameters.textPrompts} onChange={(textPrompts) => patch({ textPrompts })} />
+        )}
+        {!classify && !parameters.textPromptEnabled && (
           <ClassFilter
             names={model?.inspection.metadata?.names ?? {}}
             parameters={parameters}

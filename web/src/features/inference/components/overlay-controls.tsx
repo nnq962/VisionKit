@@ -4,17 +4,20 @@ export function OverlayControls({
   preferences,
   onChange,
   pose,
+  segment,
   canConnect,
   classify,
 }: {
   preferences: OverlayPreferences;
   onChange: (next: OverlayPreferences) => void;
   pose: boolean;
+  segment: boolean;
   canConnect: boolean;
   classify: boolean;
 }) {
   const rows: [keyof OverlayPreferences, string, boolean][] = [
     ["boxes", "Bounding box", classify],
+    ["segments", "Segmentation", !segment],
     ["labels", "Tên class / confidence", classify || !preferences.boxes],
     ["keypoints", "Điểm khớp", !pose],
     ["skeleton", "Đường nối khớp", !pose || !canConnect],
