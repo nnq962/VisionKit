@@ -10,8 +10,8 @@ export function VideoSourcePreview({
   name: string;
   poster?: string;
 }) {
-  const [failed, setFailed] = useState(false);
-  return failed ? (
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  return failedUrl === url ? (
     <div
       role="alert"
       className="flex flex-col items-center gap-2 px-6 text-center text-muted-foreground"
@@ -29,7 +29,7 @@ export function VideoSourcePreview({
       preload="metadata"
       className="size-full object-contain"
       aria-label={`Xem trước ${name}`}
-      onError={() => setFailed(true)}
+      onError={() => setFailedUrl(url)}
     />
   );
 }

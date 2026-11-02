@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import type { OverlayOptions } from "@/features/vision-overlay";
 import { DetectionMedia } from "@/features/vision-overlay";
 import type { InferenceResult } from "../api";
+import { VideoResultTimeline } from "../video-result-timeline";
 
 export function VideoRunPreview({
   src,
@@ -20,48 +21,54 @@ export function VideoRunPreview({
   playing: boolean;
   options?: OverlayOptions;
 }) {
-  const positioned = useRef(false);
   const video = useRef<HTMLVideoElement | null>(null);
+  const timeline = useRef(new VideoResultTimeline<InferenceResult>());
+  const displayed = useRef<InferenceResult | null>(null);
+  const [synchronizedResult, setSynchronizedResult] = useState<InferenceResult | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [stillFrame, setStillFrame] = useState<string | number | null>(null);
-  const timestamp = result?.timestampMs ?? 0;
   const play = useCallback(
     (element: HTMLVideoElement) => {
-      if (!positioned.current && element.readyState >= 1) {
-        element.currentTime = Math.max(0, timestamp / 1000);
-        positioned.current = true;
-      }
+      element.playbackRate = 1;
       if (element.paused && !element.ended)
         void element.play().catch(() => setBlocked(true));
     },
-    [timestamp],
+    [],
   );
+  useEffect(() => {
+    if (result) timeline.current.push(result, (video.current?.currentTime ?? 0) * 1000);
+  }, [result]);
+  useEffect(() => {
+    let request = 0;
+    function update() {
+      const element = video.current;
+      const next = element && !element.seeking
+        ? timeline.current.at(element.currentTime * 1000)
+        : null;
+      if (displayed.current !== next) {
+        displayed.current = next;
+        setSynchronizedResult(next);
+      }
+      request = requestAnimationFrame(update);
+    }
+    request = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(request);
+  }, []);
   useEffect(() => {
     const element = video.current;
     if (!element) return;
     if (playing) play(element);
-    else {
-      element.pause();
-      if (result && element.readyState >= 1)
-        element.currentTime = Math.max(0, timestamp / 1000);
-    }
-  }, [playing, play, result, timestamp]);
+    else element.pause();
+  }, [playing, play]);
   return (
     <div className="space-y-3">
       <DetectionMedia
         kind="video"
         src={src}
         label={`Kết quả ${name}`}
-        result={
-          (playing && isPlaying) ||
-          (!playing && stillFrame === (result?.frameId ?? 0))
-            ? result
-            : null
-        }
+        result={synchronizedResult}
         options={options}
-        staleAfterMs={playing ? 2000 : 0}
+        staleAfterMs={0}
         className="rounded-lg"
         videoProps={{
           controls: false,
@@ -72,26 +79,10 @@ export function VideoRunPreview({
           onLoadedMetadata: (event) => {
             video.current = event.currentTarget;
             if (playing) play(event.currentTarget);
-            else if (result)
-              event.currentTarget.currentTime = Math.max(0, timestamp / 1000);
           },
           onPlaying: () => {
-            setStillFrame(null);
-            setIsPlaying(true);
             setBlocked(false);
           },
-          onPause: () => setIsPlaying(false),
-          onSeeking: () => setStillFrame(null),
-          onSeeked: (event) => {
-            if (
-              !playing &&
-              result &&
-              Math.abs(event.currentTarget.currentTime - timestamp / 1000) <
-                0.15
-            )
-              setStillFrame(result.frameId ?? 0);
-          },
-          onEnded: () => setIsPlaying(false),
           onError: () => setFailed(true),
         }}
       />
@@ -100,7 +91,7 @@ export function VideoRunPreview({
           size="sm"
           variant="outline"
           onClick={() =>
-            void video.current?.play().catch(() => setBlocked(true))
+            video.current && play(video.current)
           }
         >
           Phát video

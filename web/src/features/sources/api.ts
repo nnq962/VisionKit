@@ -56,7 +56,7 @@ function fromRecord(record: SourceRecord): VisionSource {
     previewSize: number("preview_size"),
     previewUrl:
       (record.kind === "video"
-        ? record.content_url
+        ? `${base}/${encodeURIComponent(record.id)}/playback`
         : (record.preview_url ?? record.content_url)) ?? undefined,
     thumbnailUrl:
       record.kind === "video" ? (record.preview_url ?? undefined) : undefined,
@@ -154,6 +154,15 @@ export async function inspectImage(file: File) {
     height: Number(response.headers.get("X-Image-Height")),
     format: response.headers.get("X-Image-Format") ?? "HEIC",
   };
+}
+
+export async function prepareVideo(file: File): Promise<File> {
+  const body = new FormData();
+  body.set("file", file);
+  const blob = await (await send("/prepare-video", { method: "POST", body })).blob();
+  return new File([blob], `${file.name.replace(/\.[^.]+$/, "")}.mp4`, {
+    type: "video/mp4",
+  });
 }
 
 export async function configureRtspSource(name: string, url: string, id?: string) {

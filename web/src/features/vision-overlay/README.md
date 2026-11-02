@@ -2,6 +2,13 @@
 
 Canvas bbox/keypoint dùng chung cho ảnh, video file hoặc webcam. Không phụ thuộc YOLO, backend, WebSocket hay inference. Canvas chỉ chứa annotation, không sao chép frame gốc và không chặn thao tác media.
 
+Video inference dùng `VideoResultTimeline` trong `VideoRunPreview`: video phát ở 1×,
+không seek hoặc chờ AI để đồng bộ. Kết quả được xếp theo `timestampMs` và chỉ vẽ khi
+timestamp không vượt `video.currentTime`; kết quả cũ quá 150 ms bị bỏ. Hàng đợi giữ
+tối đa 512 kết quả gần nhất sắp tới. Frame không có detection cũng thay bbox cũ.
+Khi AI hoàn tất, video tiếp tục phát hết cùng các kết quả đang chờ. Máy xử lý chậm
+hoặc mất sự kiện có thể tạo đoạn không có bbox, thay vì làm chậm video.
+
 ## Dùng component
 
 Trong Client Component:

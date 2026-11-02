@@ -43,7 +43,7 @@ export const sourceKinds: { value: SourceKind; label: string; hint: string }[] =
     {
       value: "video",
       label: "Video",
-      hint: "MP4, WebM, MOV · tuỳ codec trình duyệt hỗ trợ",
+      hint: "MP4, WebM, MOV",
     },
     {
       value: "stream",
