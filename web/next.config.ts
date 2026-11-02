@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     proxyClientMaxBodySize: "210mb",
+    proxyTimeout: 330_000,
     // A stale persisted dev graph caused Fast Refresh to reload every page in a loop.
     turbopackFileSystemCacheForDev: false,
   },

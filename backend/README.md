@@ -48,15 +48,21 @@ The previous `backend/db/` implementation has moved into `app/db/` and `app/modu
 | Method | Path | Behaviour |
 |---|---|---|
 | POST | `/api/v1/sources/inspect` | Transient JPEG preview and X-Image-Width/Height/Format headers; no library record |
+| POST | `/api/v1/sources/prepare-video` | Multipart `file`; temporary MP4/H.264/AAC for browser preview, deleted after the response; no library record |
 | POST | `/api/v1/sources/upload` | Multipart `file`, optional `name`, `kind=image\|screen\|video` |
 | GET | `/api/v1/sources` | Page `{items,total,limit,offset}`; optional `kind`, `q` (name substring, Unicode case-insensitive), `limit` (1–1000), `offset` |
 | GET | `/api/v1/sources/{id}` | Source details, metadata, relative `content_url` |
 | GET | `/api/v1/sources/{id}/content` | Original image/video with verified MIME; HTTP Range supported |
+| GET | `/api/v1/sources/{id}/playback` | Browser video with HTTP Range; creates and reuses an MP4 sidecar for MOV or incompatible video codecs |
 | GET | `/api/v1/sources/{id}/preview` | Video thumbnail, HEIC JPEG preview, or original image |
 | PATCH | `/api/v1/sources/{id}` | Rename via JSON `{ "name": "New name" }` |
 | DELETE | `/api/v1/sources/{id}` | Delete record and its original/preview files; status 204 |
 
 Images are checked by decoded content, not by their filename or declared MIME. Supported image formats: JPEG, PNG, WebP, GIF, BMP, AVIF, HEIC/HEIF, subject to Pillow codec support. Default limits: 20 MiB/file and 64 million pixels. Metadata includes displayed width/height (respecting EXIF orientation), file size, actual format/MIME and original filename. File names on disk are generated UUIDs. These upload APIs handle local media files. RTSP configuration, preview and inference use the separate endpoints documented below.
+
+Video upload requires FFmpeg/ffprobe with the `libx264` and AAC encoders. MOV is converted once to MP4/H.264/AAC. The browser reuses that MP4 File for draft preview, library upload and unsaved AI runs. Direct API uploads also normalize MOV to MP4 before storage. The saved location, MIME, codec, dimensions, size and SHA-256 describe the MP4; downloads and AI use the same MP4 bytes. A direct MOV upload records its original name in `uploaded_filename` while `original_filename` uses `.mp4`. Conversion happens during upload/preparation with a five-minute timeout and a maximum of 1920 pixels per dimension.
+
+Existing library MOV entries remain intact and use a cached `.playback.mp4` sidecar. AI runs reuse that library cache, avoiding conversion on every run. Deleting a source also removes its playback sidecar. New MP4 sources and their run snapshots require no playback conversion.
 
 Data lives in:
 

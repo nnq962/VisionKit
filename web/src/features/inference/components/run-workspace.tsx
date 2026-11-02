@@ -185,7 +185,7 @@ function RunWorkspaceContent({
               poster={source?.thumbnailUrl}
               result={result}
               options={overlayOptions}
-              playing={run?.status === "running" && Boolean(run.result)}
+              playing={Boolean(run && ["running", "completed"].includes(run.status) && run.result)}
             />
           ) : src && supported ? (
             <DetectionMedia
@@ -203,7 +203,7 @@ function RunWorkspaceContent({
           )}
           {video && (
             <p className="text-xs leading-5 text-muted-foreground">
-              {source?.kind === "youtube" ? "AI xử lý từ đầu video. " : ""}BBox theo kết quả mới nhất, có thể lệch nhẹ video.
+              Video phát 1×. BBox đồng bộ theo thời gian video; kết quả trễ được bỏ qua.
             </p>
           )}
         </div>

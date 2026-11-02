@@ -106,7 +106,13 @@ def initialize_database(path: str | Path | None = None) -> Database:
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         if version > len(MIGRATIONS):
-            raise RuntimeError("Database schema is newer than this backend supports.")
+            raise RuntimeError(
+                f"Database {database.path} dùng schema {version}, "
+                f"nhưng backend này chỉ hỗ trợ đến schema {len(MIGRATIONS)}. "
+                "Có thể database đã được nâng cấp trên nhánh khác. "
+                "Chạy python dev.py --data-dir data/main để dùng dữ liệu riêng "
+                "(trống ban đầu), hoặc quay lại nhánh hỗ trợ database này."
+            )
         for index in range(version, len(MIGRATIONS)):
             for statement in MIGRATIONS[index]:
                 connection.execute(statement)

@@ -69,7 +69,7 @@ export function VideoSourceInput({
               <p role="status" className="text-xs text-muted-foreground">
                 {formatBytes(file.size)} ·{" "}
                 {loading
-                  ? "Đang đọc…"
+                  ? "Đang chuẩn bị video…"
                   : source?.status === "error"
                     ? "Không đọc được"
                     : "Đã chọn"}

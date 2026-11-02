@@ -19,8 +19,9 @@ def predict_video(
 ) -> None:
     """Đọc video bằng OpenCV, lấy mỗi N frame và phát sự kiện JSON gốc; không lưu timeline.
 
-    Model được nạp một lần. Pacing không cho AI chạy nhanh hơn thời gian video;
-    máy chậm vẫn xử lý theo stride và có thể trễ preview. Luôn giải phóng capture.
+    Model được nạp một lần. Pacing giữ nhịp video; khi model chậm, bỏ các frame
+    đã trễ hơn một khoảng frame để không tích luỹ độ trễ so với preview 1×.
+    Đồng hồ bắt đầu ở kết quả đầu tiên, loại trừ warmup. Luôn giải phóng capture.
     """
     model, device = load_model(model_path, request)
     with create_media_source(
@@ -29,6 +30,7 @@ def predict_video(
         vid_stride=request.options.vid_stride,
     ) as reader:
         started = time.perf_counter()
+        playback_started: float | None = None
         processed = 0
         latest = None
         progress = None
@@ -37,7 +39,14 @@ def predict_video(
             fps = meta.fps
             total = meta.total_frames
             frame_ms = meta.timestamp_ms
-            delay = frame_ms / 1000 - (time.perf_counter() - started)
+            elapsed = (
+                time.perf_counter() - playback_started
+                if playback_started is not None
+                else 0
+            )
+            if playback_started is not None and frame_ms / 1000 < elapsed - 1 / fps:
+                continue
+            delay = frame_ms / 1000 - elapsed
             if delay > 0:
                 time.sleep(delay)
             result = model.predict(
@@ -69,6 +78,8 @@ def predict_video(
                 else None,
             }
             publish({"type": "frame", "result": latest, "progress": progress})
+            if playback_started is None:
+                playback_started = time.perf_counter() - frame_ms / 1000
         if latest is None:
             raise ValueError("Video không có frame giải mã được.")
         progress = {**progress, "percent": 100}

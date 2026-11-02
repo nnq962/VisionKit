@@ -890,6 +890,107 @@ class RunTests(unittest.TestCase):
         self.assertEqual(preview.headers["content-type"], "video/mp4")
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "Cần FFmpeg")
+    def test_converted_mov_runs_without_reencoding(self) -> None:
+        """MOV đã lưu thành MP4 được dùng lại cho AI và preview mà không chuyển mã nữa."""
+        root = self.settings.database_path.parent
+        original = root / "clip.mp4"
+        original.write_bytes(video_bytes())
+        mov = root / "phone.MOV"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-i",
+                str(original),
+                "-c",
+                "copy",
+                "-f",
+                "mov",
+                str(mov),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        payload = mov.read_bytes()
+        source = self.client.post(
+            "/api/v1/sources/upload",
+            data={"kind": "video"},
+            files={"file": ("phone.MOV", payload)},
+        ).json()
+        stored_payload = self.client.get(source["content_url"]).content
+        self.assertNotEqual(stored_payload, payload)
+        self.delay = 0.5
+        with patch(
+            "app.storage.local.create_video_playback", side_effect=AssertionError
+        ):
+            response = self.client.post(
+                "/api/v1/runs",
+                data={
+                    "model_id": self.model_id,
+                    "source_id": source["id"],
+                    "options": "{}",
+                },
+            )
+        self.assertEqual(response.status_code, 202, response.text)
+        record = response.json()
+        snapshot = self.app.state.runs.storage.path(record["source_location"])
+        compatible = snapshot.with_name(f"{snapshot.stem}.playback.mp4")
+        self.assertFalse(compatible.exists())
+        self.assertEqual(snapshot.read_bytes(), stored_payload)
+        with patch(
+            "app.storage.local.create_video_playback", side_effect=AssertionError
+        ):
+            preview = self.client.get(
+                f"/api/v1/runs/{record['id']}/preview",
+                headers={"Range": "bytes=0-99"},
+            )
+        self.assertEqual(preview.status_code, 206)
+        self.assertEqual(preview.headers["content-type"], "video/mp4")
+        self.assertEqual(preview.content, stored_payload[:100])
+        self.assertNotEqual(preview.content, payload[:100])
+        self.assertEqual(
+            self.client.delete(f"/api/v1/runs/{record['id']}/resources").status_code,
+            204,
+        )
+        self.assertFalse(snapshot.exists())
+        self.assertFalse(compatible.exists())
+        self.assertEqual(self.client.get(source["content_url"]).content, stored_payload)
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "Cần FFmpeg")
+    def test_legacy_mov_reuses_library_playback_for_each_run(self) -> None:
+        """Video thư viện cũ tái dùng cache MP4 giữa các lượt AI, không chuyển mã lại."""
+        sources = self.app.state.sources
+        legacy = sources.storage.path("legacy.mov")
+        legacy.write_bytes(video_bytes())
+        source = sources.repository.create(
+            name="Legacy MOV",
+            kind="video",
+            location=legacy.name,
+            metadata={"codec": "h264", "mime_type": "video/quicktime"},
+        )
+        prepared = self.client.get(f"/api/v1/sources/{source.id}/playback")
+        self.assertEqual(prepared.status_code, 200)
+        with patch(
+            "app.storage.local.create_video_playback", side_effect=AssertionError
+        ):
+            for _ in range(2):
+                response = self.client.post(
+                    "/api/v1/runs",
+                    data={
+                        "model_id": self.model_id,
+                        "source_id": source.id,
+                        "options": "{}",
+                    },
+                )
+                self.assertEqual(response.status_code, 202, response.text)
+                record = self.wait(response.json()["id"])
+                snapshot = self.app.state.runs.storage.path(record["source_location"])
+                self.assertEqual(snapshot.read_bytes(), prepared.content)
+                self.assertTrue(snapshot.name.endswith(".mp4"))
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "Cần FFmpeg")
     def test_video_partial_stream_is_failed(self) -> None:
         """EOF trước completed không được báo thành công, vẫn giữ frame cuối để chẩn đoán."""
         self.video_partial = True

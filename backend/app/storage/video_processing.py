@@ -6,24 +6,26 @@ import subprocess
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from app.core.errors import SourceError
 
 
 # ------------------------- Chạy công cụ xử lý video --------------------------
-def run_video_tool(arguments: list[str]) -> bytes:
+def run_video_tool(arguments: list[str], timeout: int = 30) -> bytes:
     """Chạy lệnh FFmpeg/ffprobe không qua shell và trả stdout dạng bytes.
 
     Tham số:
         arguments: Tên chương trình và các tham số riêng biệt, chỉ đọc file local.
+        timeout: Thời gian tối đa tính bằng giây.
     Ngoại lệ:
-        SourceError: 503 nếu thiếu công cụ, 415 nếu lỗi hoặc quá 30 giây.
+        SourceError: 503 nếu thiếu công cụ, 415 nếu lỗi hoặc quá thời gian cho phép.
     Tác động phụ:
         Tạo tiến trình con, tự kết thúc khi hết thời gian xử lý.
     """
     try:
         return subprocess.run(
-            arguments, check=True, capture_output=True, timeout=30
+            arguments, check=True, capture_output=True, timeout=timeout
         ).stdout
     except FileNotFoundError as error:
         raise SourceError(
@@ -152,3 +154,67 @@ def inspect_video(path: Path) -> tuple[dict[str, Any], bytes]:
     if not preview:
         raise SourceError(415, "Không tạo được thumbnail video.")
     return metadata, preview
+
+
+# --------------------- Tạo video tương thích trình duyệt ---------------------
+def create_video_playback(path: Path, destination: Path) -> None:
+    """Tạo bản MP4 H.264/AAC để phát trên web, giữ nguyên file nguồn.
+
+    Tham số:
+        path: Video local đã được inspect_video xác minh.
+        destination: Đường dẫn MP4 đích; chỉ thay thế sau khi chuyển mã thành công.
+    Ngoại lệ:
+        SourceError: Thiếu FFmpeg, chuyển mã lỗi hoặc vượt giới hạn 5 phút.
+        OSError: Không ghi được file đầu ra.
+    Tác động phụ:
+        Chạy FFmpeg tối đa hai luồng, tạo MP4 tối đa 1920 pixel mỗi chiều;
+        tự dọn file trung gian kể cả khi lỗi. Không thay đổi video dùng cho AI.
+    """
+    temporary = destination.with_name(f"{uuid4().hex}.part.mp4")
+    try:
+        run_video_tool(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-nostdin",
+                "-threads",
+                "2",
+                "-protocol_whitelist",
+                "file,pipe",
+                "-format_whitelist",
+                "mov,matroska,webm,ogg",
+                "-i",
+                str(path),
+                "-map",
+                "0:V:0",
+                "-map",
+                "0:a:0?",
+                "-vf",
+                "scale=w='min(1920,iw)':h='min(1920,ih)':"
+                "force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
+                "-threads",
+                "2",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",
+                "-f",
+                "mp4",
+                str(temporary),
+            ],
+            timeout=300,
+        )
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
