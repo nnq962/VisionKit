@@ -18,13 +18,15 @@ export function ModelStep({ selection }: { selection: ModelSelection }) {
       </p>
     );
   return (
-    <div className="space-y-6">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-4">
       <div
         className="flex flex-wrap gap-2"
         role="group"
         aria-label="Cách chọn model"
       >
         <Button
+          size="sm"
           variant={selection.mode === "saved" ? "secondary" : "ghost"}
           aria-pressed={selection.mode === "saved"}
           disabled={
@@ -36,6 +38,7 @@ export function ModelStep({ selection }: { selection: ModelSelection }) {
           Đã có ({selection.library.length})
         </Button>
         <Button
+          size="sm"
           variant={selection.mode === "upload" ? "secondary" : "ghost"}
           aria-pressed={selection.mode === "upload"}
           disabled={
@@ -52,8 +55,7 @@ export function ModelStep({ selection }: { selection: ModelSelection }) {
           )}
         </Button>
       </div>
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <div className="min-w-0 space-y-6">
+        <div className="space-y-4">
           {selection.mode === "saved" ? (
             <ModelLibraryPicker selection={selection} />
           ) : (
@@ -70,7 +72,10 @@ export function ModelStep({ selection }: { selection: ModelSelection }) {
             </p>
           )}
         </div>
+      </div>
+      <div className="min-w-0 lg:sticky lg:top-24">
         <ModelDetails
+          compact
           model={selection.selected}
           selection={selection}
           draft={selection.mode === "upload" ? selection : undefined}

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { LibraryScrollArea } from "@/components/library-scroll-area";
 import Link from "next/link";
 import {
   BoxIcon,
@@ -30,6 +31,7 @@ export function ModelLibraryPicker({
 }) {
   const [search, setSearch] = useState("");
   const [limit, setLimit] = useState(20);
+  const scroll = useRef<HTMLDivElement>(null);
   const query = search.trim().toLocaleLowerCase("vi");
   const items = selection.library.filter((item) =>
     `${item.name ?? ""} ${item.filename} ${item.familyName} ${item.format ?? "pt"} ${modelTaskLabel(item.task)}`
@@ -37,7 +39,7 @@ export function ModelLibraryPicker({
       .includes(query),
   );
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div className="flex gap-2">
         <div className="relative min-w-0 flex-1">
           <SearchIcon className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
@@ -49,6 +51,7 @@ export function ModelLibraryPicker({
             onChange={(event) => {
               setSearch(event.target.value);
               setLimit(20);
+              scroll.current?.scrollTo({ top: 0 });
             }}
           />
         </div>
@@ -66,6 +69,7 @@ export function ModelLibraryPicker({
           />
         </Button>
       </div>
+      <LibraryScrollArea label="Model đã lưu" scrollRef={scroll}>
       {selection.libraryError ? (
         <div role="alert" className="space-y-3">
           <p className="text-sm text-destructive">{selection.libraryError}</p>
@@ -85,40 +89,38 @@ export function ModelLibraryPicker({
           <legend className="sr-only">Chọn một model đã lưu</legend>
           <div className="divide-y">
             {items.slice(0, limit).map((item) => (
-              <div key={item.id} className="py-1 first:pt-0 last:pb-0">
-                <label
-                  className={`flex cursor-pointer items-center gap-3 rounded-lg p-3 text-left focus-within:ring-2 focus-within:ring-ring ${selection.selectedId === item.id ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"}`}
-                >
-                  <input
-                    className="sr-only"
-                    type="radio"
-                    name="pipeline-model"
-                    value={item.id}
-                    checked={selection.selectedId === item.id}
-                    onChange={() => selection.update({ selectedId: item.id })}
-                    disabled={selection.validating}
-                  />
-                  <BoxIcon
-                    className="size-5 shrink-0 text-muted-foreground"
-                    strokeWidth={1.5}
-                  />
-                  <span className="min-w-0 flex-1 space-y-1">
-                    <span
-                      title={item.name ?? item.filename}
-                      className="block truncate text-sm font-medium"
-                    >
-                      {item.name ?? item.filename}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {item.familyName} · {modelTaskLabel(item.task)} ·{" "}
-                      {(item.format ?? "pt").toUpperCase()} ·{" "}
-                      {formatBytes(item.sizeBytes)}
-                    </span>
+              <div key={item.id} className="py-0.5 first:pt-0 last:pb-0">
+              <label
+                className={`relative flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2.5 text-left focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring ${selection.selectedId === item.id ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"}`}
+              >
+                <input
+                  className="sr-only"
+                  type="radio"
+                  name="pipeline-model"
+                  value={item.id}
+                  checked={selection.selectedId === item.id}
+                  onChange={() => selection.update({ selectedId: item.id })}
+                  disabled={selection.validating}
+                />
+                <BoxIcon
+                  className="size-4 shrink-0 text-muted-foreground"
+                  strokeWidth={1.5}
+                />
+                <span className="min-w-0 flex-1 space-y-1">
+                  <span title={item.name ?? item.filename}
+                    className="block truncate text-sm font-medium">
+                    {item.name ?? item.filename}
                   </span>
-                  {selection.selectedId === item.id && (
-                    <CheckIcon className="size-4 shrink-0" />
-                  )}
-                </label>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {modelTaskLabel(item.task)} ·{" "}
+                    {(item.format ?? "pt").toUpperCase()} ·{" "}
+                    {formatBytes(item.sizeBytes)}
+                  </span>
+                </span>
+                {selection.selectedId === item.id && (
+                  <CheckIcon className="size-4 shrink-0" />
+                )}
+              </label>
               </div>
             ))}
           </div>
@@ -137,12 +139,16 @@ export function ModelLibraryPicker({
           </Button>
         </div>
       )}
+      </LibraryScrollArea>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+      <span className="tabular-nums">{Math.min(items.length, limit)} / {items.length} model</span>
       {items.length > limit && (
         <Button
+          size="sm"
           variant="outline"
           onClick={() => setLimit((value) => value + 20)}
         >
-          Xem thêm ({items.length - limit})
+          Xem thêm
         </Button>
       )}
       {items.length > 0 && (
@@ -150,10 +156,11 @@ export function ModelLibraryPicker({
           href="/models"
           className="inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
         >
-          Tải thêm từ Model Hub
+          Model Hub
           <ArrowUpRightIcon className="size-3" />
         </Link>
       )}
+      </div>
     </div>
   );
 }
