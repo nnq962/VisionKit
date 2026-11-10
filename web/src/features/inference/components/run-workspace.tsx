@@ -13,6 +13,7 @@ import { runPreview } from "../api";
 import { LiveRunPreview } from "./live-run-preview";
 import { WebcamRunPreview } from "./webcam-run-preview";
 import { RunMetrics } from "./run-metrics";
+import { ResultCapture } from "@/features/media-capture/result-capture";
 
 function RunWorkspaceContent({
   source,
@@ -140,7 +141,7 @@ function RunWorkspaceContent({
       {supported && (
         <RunMetrics result={result} progress={run?.progress} video={temporal} />
       )}
-      {live && <p className="text-xs text-muted-foreground">AI lấy tối đa {parameters.liveFps} FPS · tối đa {parameters.liveMinutes} phút · tiếp tục chạy khi chuyển trang.</p>}
+      {live && <p className="text-xs text-muted-foreground">AI · {parameters.liveFps} FPS · tối đa {parameters.liveMinutes} phút</p>}
       {video && run?.progress && (
         <div className="space-y-2">
           <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground tabular-nums">
@@ -173,37 +174,39 @@ function RunWorkspaceContent({
       )}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-3">
-          {webcam ? (
-            <WebcamRunPreview key={source?.id} src={src ?? ""} name={`Webcam ${source?.deviceIndex ?? 0} trên máy AI`} result={result} options={overlayOptions} active={inference.active} />
-          ) : live && source ? (
-            <LiveRunPreview sourceId={source.id} name={source.name} result={inference.active ? result : null} options={overlayOptions} />
-          ) : src && supported && video ? (
-            <VideoRunPreview
-              key={run?.id ?? src}
-              src={src}
-              name={source?.name ?? "Video"}
-              poster={source?.thumbnailUrl}
-              result={result}
-              options={overlayOptions}
-              playing={Boolean(run && ["running", "completed"].includes(run.status) && run.result)}
-            />
-          ) : src && supported ? (
-            <DetectionMedia
-              kind="image"
-              src={src}
-              alt={`Kết quả ${source?.name ?? "ảnh"}`}
-              result={result}
-              options={overlayOptions}
-              className="rounded-lg"
-            />
-          ) : (
-            <div className="flex aspect-video items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
-              Chọn source để chạy inference
-            </div>
-          )}
+          <ResultCapture key={run?.id ?? source?.id} name={source?.name ?? "ket-qua"} temporal={temporal}>
+            {webcam ? (
+              <WebcamRunPreview key={source?.id} src={src ?? ""} name={`Webcam ${source?.deviceIndex ?? 0} trên máy AI`} result={result} options={overlayOptions} active={inference.active} />
+            ) : live && source ? (
+              <LiveRunPreview sourceId={source.id} name={source.name} result={inference.active ? result : null} options={overlayOptions} />
+            ) : src && supported && video ? (
+              <VideoRunPreview
+                key={run?.id ?? src}
+                src={src}
+                name={source?.name ?? "Video"}
+                poster={source?.thumbnailUrl}
+                result={result}
+                options={overlayOptions}
+                playing={Boolean(run && ["running", "completed"].includes(run.status) && run.result)}
+              />
+            ) : src && supported ? (
+              <DetectionMedia
+                kind="image"
+                src={src}
+                alt={`Kết quả ${source?.name ?? "ảnh"}`}
+                result={result}
+                options={overlayOptions}
+                className="rounded-lg"
+              />
+            ) : (
+              <div className="flex aspect-video items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
+                Chọn source để chạy inference
+              </div>
+            )}
+          </ResultCapture>
           {video && (
             <p className="text-xs leading-5 text-muted-foreground">
-              Video phát 1×. BBox đồng bộ theo thời gian video; kết quả trễ được bỏ qua.
+              Video 1× · Kết quả theo khung hình.
             </p>
           )}
         </div>

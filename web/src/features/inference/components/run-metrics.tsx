@@ -58,19 +58,19 @@ export function RunMetrics({
   return (
     <dl
       aria-label="Hiệu năng suy luận"
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      className="grid grid-cols-2 gap-2 xl:grid-cols-4"
     >
       {metrics.map((metric) => (
         <div
           key={metric.label}
           title={metric.title}
-          className="grid h-32 min-w-0 grid-rows-[1rem_1.75rem_minmax(0,1fr)] gap-y-2 overflow-hidden rounded-lg border bg-muted/20 p-4 text-left"
+          className="grid min-w-0 gap-y-1 overflow-hidden rounded-lg border bg-muted/20 p-3 text-left"
         >
           <dt title={metric.label} className="truncate text-xs leading-4 text-muted-foreground">{metric.label}</dt>
-          <dd title={metric.value} className="min-w-0 truncate text-xl leading-7 font-semibold tabular-nums">
+          <dd title={metric.value} className="min-w-0 truncate text-lg leading-6 font-semibold tabular-nums">
             {metric.value}
           </dd>
-          <dd title={metric.detail} className="line-clamp-2 min-w-0 break-words text-xs leading-4 text-muted-foreground">
+          <dd title={metric.detail} className="min-w-0 truncate text-xs leading-4 text-muted-foreground">
             {metric.detail}
           </dd>
         </div>

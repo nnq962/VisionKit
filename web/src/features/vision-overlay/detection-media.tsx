@@ -67,6 +67,7 @@ function MediaSurface(props: DetectionMediaProps) {
       {props.kind === "image" ? (
         <img
           {...props.imageProps}
+          data-capture-media
           ref={mediaRef}
           src={props.src}
           alt={props.alt}
@@ -77,13 +78,14 @@ function MediaSurface(props: DetectionMediaProps) {
           controls
           playsInline
           {...props.videoProps}
+          data-capture-media
           ref={mediaRef}
           src={props.src}
           aria-label={props.label}
           style={mediaStyle}
         />
       )}
-      <canvas ref={canvasRef} style={canvasStyle} aria-hidden="true" />
+      <canvas ref={canvasRef} style={canvasStyle} aria-hidden="true" data-capture-overlay />
     </div>
   );
 }

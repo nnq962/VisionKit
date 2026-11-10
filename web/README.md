@@ -73,6 +73,20 @@ Run the AI service on port 8001 alongside backend 8000. Selecting a file automat
 
 Source and model detail sheets share `StorageDetails`. Saved sources expose original filename, relative storage location, exact bytes, MIME, created/updated timestamps, optional preview file/size and SHA-256. New image/screen/video uploads compute SHA-256 while streaming; older records without it display “Chưa ghi nhận”.
 
+## Compact YOLO workspace
+
+YOLO keeps the existing new-source, library, model-upload and Model Hub flows.
+Source/model pickers use their own keyboard-focusable scroll regions, bounded by
+viewport height, with search/filter and pagination controls outside the list.
+Short lists shrink to fit. Selecting a long-name item does not resize the layout
+or scroll the enclosing workspace; radio inputs are positioned within their rows.
+
+The step header stays visible while scrolling. Source/model previews show a short
+summary, with full metadata and source management available through disclosure
+controls. Database detail views retain their full layout. Parameters show the
+selected source/model with optional input details; run metrics use a compact
+four-card layout (two columns on mobile).
+
 ## YOLO parameter setup
 
 The Parameters step composes inference controls, a searchable metadata-driven class filter, collapsible advanced settings and a source/model context panel. Confidence/IoU, input dimensions, requested device, maximum detections, class-agnostic NMS and temporal frame stride are represented as configuration. Classification hides bbox/NMS/class-filter controls. Static NCHW ONNX spatial dimensions lock the input size (including rectangular inputs); other size options follow the model stride. Runtime hardware support is still unverified until inference integration.
@@ -98,6 +112,33 @@ restoring old progress or annotations. Queued/running video runs still reconnect
 image results retain their existing restoration behavior. JSON download contains the last frame and summary only, not all video detections.
 
 Browsers must support the original codec (MP4/H.264 is practical); no transcoding is done. Bbox/keypoint output can lag or lead playback, especially on slow hardware. Frames with no objects clear prior annotations, stale active overlays expire, and overlays are hidden after playback ends while AI is still working. Source video itself is never sent frame-by-frame from AI to the browser. Canvas and video playback remain separate.
+
+## Capture result images and video
+
+The Run preview provides **Bắt đầu ghi**, **Dừng và lưu video** and **Chụp ảnh**.
+Capture composites the displayed media with its canvas annotations, including the
+current bbox, label, segmentation and pose visibility settings. Uploaded/YouTube
+video, RTSP WebRTC and webcam result canvases share this browser-only feature;
+image/screen results support PNG snapshots. Taking a snapshot also works during a
+recording. Stopping a recording leaves playback, the shared camera and AI running.
+
+Downloads use timestamped filenames: PNG images and MP4 recordings (preferring
+H.264) when supported by the browser, falling back to WebM otherwise. Capture has
+no audio, preserves preview letterboxing,
+and uses source resolution capped at 1920px on the longest output edge. Video is
+recorded in real time at up to 30 FPS; RTSP retains the existing asynchronous AI
+overlay timing. It does not export unseen or historical inference frames.
+
+Playback end, leaving/replacing the preview, or hiding the tab finalizes and
+downloads the current clip. A close/reload warning protects an active recording;
+hard browser termination cannot guarantee a download. To bound browser RAM, a clip
+is automatically finalized around 256 MiB; start again for another segment.
+Remote HTTP images/video must permit canvas capture through same-origin access or
+CORS. The existing backend proxy and WebRTC preview paths are reused unchanged.
+
+Run `npm run test:capture` (Node >=22.18) for composition, codec selection,
+recording lifecycle, final chunks, repeated clips, source isolation, cleanup,
+failure recovery and the memory limit.
 
 ## Run overlay controls
 

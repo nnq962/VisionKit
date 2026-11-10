@@ -4,6 +4,7 @@ import { VideoStreamPreview } from "@/features/video-stream";
 import { VideoSourcePreview } from "./video-source-preview";
 import { CameraIcon, FileImageIcon, FilmIcon, RadioIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DetailDisclosure } from "@/components/detail-disclosure";
 import { formatBytes, formatDuration } from "../media-metadata";
 import { sourceLabel, type SourceKind, type VisionSource } from "../types";
 
@@ -11,10 +12,12 @@ export function SourceDetails({
   source,
   onOpenCamera,
   emptyKind,
+  compact = false,
 }: {
   source: VisionSource | null;
   onOpenCamera?: () => void;
   emptyKind?: SourceKind;
+  compact?: boolean;
 }) {
   if (source?.kind === "stream" || (!source && emptyKind === "stream")) {
     return (
@@ -30,13 +33,13 @@ export function SourceDetails({
             <p className="text-xs leading-5">Nhập URL RTSP rồi bấm kiểm tra để xem trực tiếp.</p>
           </div>
         )}
-        <dl className="divide-y text-xs">
+        {!compact && <dl className="divide-y text-xs">
           {[["Phát trên web", "WebRTC qua MediaMTX"], ["Khôi phục kết nối", "Tự động"], ["Khi chuyển trang", "Giữ kết nối"]].map(([label, value]) => (
             <div key={label} className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-4 py-3">
               <dt className="text-muted-foreground">{label}</dt><dd className="text-left font-medium">{value}</dd>
             </div>
           ))}
-        </dl>
+        </dl>}
       </aside>
     );
   }
@@ -48,7 +51,7 @@ export function SourceDetails({
         : CameraIcon;
   return (
     <aside
-      className="min-w-0 space-y-6 border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+      className={`min-w-0 ${compact ? "space-y-4" : "space-y-6"} border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6`}
       aria-label="Thông tin source"
     >
       <div className="flex items-center justify-between gap-3">
@@ -92,8 +95,13 @@ export function SourceDetails({
       {source && (
         <>
           <div className="space-y-2">
-            <p className="break-all text-sm font-medium">{source.name}</p>
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <p className={`${compact ? "truncate" : "break-all"} text-sm font-medium`} title={source.name}>{source.name}</p>
+            {compact && <p className="text-xs text-muted-foreground">{[
+              source.width && source.height ? `${source.width} × ${source.height}` : undefined,
+              source.format,
+              source.size !== undefined ? formatBytes(source.size) : undefined,
+            ].filter(Boolean).join(" · ")}</p>}
+            {(!compact || !source.saved) && <p className="flex items-center gap-2 text-xs text-muted-foreground">
               <RadioIcon className="size-3.5 shrink-0" />
               {source.saved
                 ? "Đã lưu"
@@ -104,14 +112,15 @@ export function SourceDetails({
                     : source.status === "error"
                       ? "Không đọc được source"
                       : "Chưa xác minh kết nối"}
-            </p>
+            </p>}
           </div>
           {source.error && (
             <p role="alert" className="text-sm leading-6 text-destructive">
               {source.error}
             </p>
           )}
-          <dl className="divide-y text-sm">
+          <DetailDisclosure enabled={compact} title="Chi tiết source">
+          <dl className={`divide-y text-sm ${compact ? "mt-3 max-h-64 overflow-y-auto overscroll-contain [scrollbar-width:thin]" : ""}`}>
             {[
               [
                 "Độ phân giải",
@@ -153,6 +162,7 @@ export function SourceDetails({
               </div>
             ))}
           </dl>
+          </DetailDisclosure>
           {source.kind === "webcam" &&
             source.status === "pending" &&
             onOpenCamera && (
