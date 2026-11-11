@@ -19,7 +19,7 @@ export function RunMetrics({
   const elapsed = result ? `${number(result.elapsedMs / 1000, 2)} s` : "—";
   const metrics = [
     {
-      label: video ? "Suy luận / frame" : "Suy luận",
+      label: video ? "AI / khung hình" : "Thời gian AI",
       value: result ? `${number(result.speed.inference)} ms` : "—",
       detail: result
         ? `Tiền xử lý ${number(result.speed.preprocess)} ms · Hậu xử lý ${number(result.speed.postprocess)} ms`
@@ -39,7 +39,7 @@ export function RunMetrics({
         : "Thời gian xử lý tại AI, không gồm tải tệp và truyền kết quả.",
     },
     {
-      label: topClass ? "Độ tin cậy" : "Đối tượng phát hiện",
+      label: topClass ? "Độ tin cậy" : "Đối tượng",
       value: topClass
         ? `${number(topClass.confidence * 100)}%`
         : result
@@ -48,7 +48,7 @@ export function RunMetrics({
       detail: topClass?.label ?? (video ? "Trong frame mới nhất" : "Trong ảnh"),
     },
     {
-      label: "Thiết bị thực thi",
+      label: "Thiết bị",
       value: result?.device ?? "—",
       detail: result
         ? `Ảnh gốc ${result.sourceSize.width} × ${result.sourceSize.height}`
@@ -58,13 +58,13 @@ export function RunMetrics({
   return (
     <dl
       aria-label="Hiệu năng suy luận"
-      className="grid grid-cols-2 overflow-hidden rounded-lg border bg-muted/20 sm:grid-cols-4"
+      className="grid grid-cols-2 gap-x-4 gap-y-3 border-b pb-4 sm:grid-cols-4"
     >
       {metrics.map((metric) => (
         <div
           key={metric.label}
           title={[metric.title, metric.detail].filter(Boolean).join(" ")}
-          className="grid min-w-0 gap-1 border-r px-3 py-2 text-left last:border-r-0"
+          className="grid min-w-0 gap-1 text-left"
         >
           <dt title={metric.label} className="truncate text-xs leading-4 text-muted-foreground">{metric.label}</dt>
           <dd title={metric.value} className="min-w-0 truncate text-base leading-5 font-semibold tabular-nums">

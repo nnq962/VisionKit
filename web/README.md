@@ -45,7 +45,7 @@ npm run build
 
 Run the backend on port 8000 before using the persistent library. Next.js proxies `/api/v1/*` to `http://127.0.0.1:8000`; set `VISIONKIT_API_URL` in the web server environment to use another backend address. Restart Next.js after changing its configuration/environment.
 
-Images and one-shot screen captures preview locally first. Selecting “Lưu source để tái sử dụng” uploads the actual file and persists metadata; the saved library survives page reloads. It supports previews, rename, confirmed deletion and loading additional pages. Search filters currently loaded entries. Video files also support persistent upload and inference. RTSP, YouTube video and local webcam inference are documented below.
+Images and one-shot screen captures preview locally first. Clicking **Lưu nguồn** next to the source name uploads the actual file and persists metadata; the saved library survives page reloads. It supports previews, rename, confirmed deletion and loading additional pages. Search filters currently loaded entries. Video files also support persistent upload and inference. RTSP, YouTube video and local webcam inference are documented below.
 
 `src/features/sources/api.ts` owns the HTTP contract. The reusable source module handles metadata, browser capture and library state; the four YOLO step components remain separate. The UI reports API errors and retries without falling back to sample data.
 
@@ -53,7 +53,7 @@ HEIC/HEIF files use the backend's transient `/api/v1/sources/inspect` endpoint f
 
 ## Source drafts
 
-`SourceProvider` lives in the shared workspace layout so changing routes does not destroy the current source picker state. `use-source-drafts.ts` keeps independent drafts for each source type, including the original File, HEIC preview Blob, URL text, display name and save preference. Selecting an existing library source does not replace a new-source draft.
+`SourceProvider` lives in the shared workspace layout so changing routes does not destroy the current source picker state. `use-source-drafts.ts` keeps independent drafts for each source type, including the original File, HEIC preview Blob, URL text, display name and connection settings. Selecting an existing library source does not replace a new-source draft.
 
 Draft files and metadata are saved locally in IndexedDB (`visionkit-source-drafts`), not automatically uploaded to the saved library. Blob preview URLs are reconstructed after reload. A draft remains local to this browser/origin and can be explicitly discarded; saving to the backend removes it from the unsaved draft cache. Browser storage is best-effort: if unavailable/full, the UI reports that drafts are only retained during in-app navigation and warns before leaving/reloading. Files interrupted during metadata reading are retained with a retry action. Screen MediaStreams are never persisted. Webcam capture belongs to the AI worker on the server; the browser does not call getUserMedia. RTSP WebRTC connections are owned by the root provider and remain connected across routes until explicitly stopped.
 
@@ -63,7 +63,7 @@ Draft files and metadata are saved locally in IndexedDB (`visionkit-source-draft
 
 ## Pipeline model selection
 
-The YOLO model step uses the real `/api/v1/models` library, or uploads custom `.pt`/`.onnx` weights via `/api/v1/models/upload`. It selects saved model IDs, validates file availability before advancing, and displays browser upload progress. Reusable components and the selection provider live in `features/models/`; `steps/model-step.tsx` only composes them. IndexedDB retains model selection and unsaved upload drafts across routes and reloads. Runtime compatibility remains the responsibility of the AI module.
+The YOLO model step uses the real `/api/v1/models` library, or uploads custom `.pt`/`.onnx` weights via `/api/v1/models/upload`. It selects saved model IDs, validates file availability before opening results or starting inference, and displays browser upload progress. Reusable components and the selection provider live in `features/models/`; `steps/model-step.tsx` only composes them. IndexedDB retains model selection and unsaved upload drafts across routes and reloads. Runtime compatibility remains the responsibility of the AI module.
 
 Run the AI service on port 8001 alongside backend 8000. Selecting a file automatically uploads it to temporary storage and polls metadata extraction; no save click is required. **Lưu vào thư viện** promotes the same file without uploading it again. The pipeline can advance with a temporary model after metadata is ready/manual. Temporary models are hidden from the saved library, survive reload via their IndexedDB ID, and expire after 24 hours of inactivity. Details show inferred family/task, class names/count, image size, input shape and available architecture information. Missing metadata allows manual configuration; AI downtime preserves the uploaded model with a retry action. Existing uninspected models are inspected on selection. The next step requires `ready` or explicit manual configuration; extracted metadata does not validate inference execution.
 
@@ -76,16 +76,38 @@ Source and model detail sheets share `StorageDetails`. Saved sources expose orig
 ## Compact YOLO workspace
 
 YOLO keeps the existing new-source, library, model-upload and Model Hub flows.
-Source/model pickers use their own keyboard-focusable scroll regions, bounded by
-viewport height, with search/filter and pagination controls outside the list.
-Short lists shrink to fit. Selecting a long-name item does not resize the layout
-or scroll the enclosing workspace; radio inputs are positioned within their rows.
+The pipeline uses normal document scrolling and open sections without an outer
+card. Source/model lists, model labels and parameter class lists expand with their
+content; search and pagination remain available. The duplicate page heading is
+visually hidden, and switching steps does not force a scroll to the top. Model Hub
+and Database use the same open layout with document scrolling, compact tabs and
+aligned search/filter controls, without duplicate headings or outer cards.
+Shared colors use lime accents with dark foregrounds on primary actions. Scrollbar
+tracks are hidden across browsers while wheel, touch and keyboard scrolling remain available.
 
-The step header stays visible while scrolling. Source/model previews show a short
-summary, with full metadata and source management available through disclosure
-controls. Database detail views retain their full layout. Parameters show the
-selected source/model with optional input details; run metrics use a compact
-four-card layout (two columns on mobile).
+Model rows have a leading checkbox, with one model selected at a time. Keyboard
+focus stays on that checkbox instead of outlining the whole row. Saved source/model
+lists use full-width rows with a separate name and metadata line.
+File selection uses the same compact picker for images and video. The source name
+and **Lưu nguồn** action are directly available beside the preview, with no opt-in
+checkbox and no automatic save when navigating. Model information and class names
+are always visible in the inspector. Database detail views retain their full layout. Parameters show the
+selected source/model with optional input details; run metrics use one compact
+row (two columns on mobile).
+
+The four steps are directly clickable, and source/model can be chosen in either
+order. With both ready, **Chạy AI** validates prerequisites and starts one run
+directly; an already active run reconnects instead of starting a duplicate.
+**Kết quả** opens the preview without auto-starting. Model validation only occurs
+when entering results/running, so browsing steps does not flash a loading label.
+Model settings stay available under **Thông số** and are retained when changing sources.
+
+The Run toolbar groups status, **Đổi nguồn** and **Chạy AI / Dừng AI**. Editing a
+source, model or parameters during an active run presents an inline stop action;
+navigation waits for successful cancellation. A failed stop keeps the preview
+and an actionable error visible. Navigation is locked during restoration,
+startup, cancellation and cleanup. Capture and JSON export sit below the preview;
+display options remain beside it. YOLOE suggestions expand on demand.
 
 ## YOLO parameter setup
 
@@ -115,12 +137,14 @@ Browsers must support the original codec (MP4/H.264 is practical); no transcodin
 
 ## Capture result images and video
 
-The Run preview provides **Bắt đầu ghi**, **Dừng và lưu video** and **Chụp ảnh**.
+The Run preview provides **Ghi video**, **Dừng ghi** (saves the clip) and **Chụp ảnh**.
 Capture composites the displayed media with its canvas annotations, including the
 current bbox, label, segmentation and pose visibility settings. Uploaded/YouTube
 video, RTSP WebRTC and webcam result canvases share this browser-only feature;
 image/screen results support PNG snapshots. Taking a snapshot also works during a
 recording. Stopping a recording leaves playback, the shared camera and AI running.
+The recording buttons explain silent capture and automatic saving in their tooltips,
+without adding a text row that shifts the action toolbar.
 
 Downloads use timestamped filenames: PNG images and MP4 recordings (preferring
 H.264) when supported by the browser, falling back to WebM otherwise. Capture has
@@ -266,10 +290,10 @@ updates coalesce to the newest URL instead of rebuilding the image/canvas DOM.
 
 ## Completing a pipeline and source controls
 
-The Run step shows **Hoàn thành** after completion, failure or Stop. Completion
+The Run step shows **Kết thúc phiên** after completion, failure or Stop. Completion
 awaits cleanup, clears the run recovery ID, releases the selected RTSP viewer or
 YouTube cache, revokes draft object URLs and clears the current source selection,
-then returns focus to step 1. Temporary uploaded models are deleted; saved source
+then returns to step 1. Temporary uploaded models are deleted; saved source
 and model library entries and other drafts are preserved. Cleanup errors keep the
 run step visible for retry. JSON can be downloaded before completion; finishing
 removes the run snapshot/result rather than retaining it for the usual 24 hours.

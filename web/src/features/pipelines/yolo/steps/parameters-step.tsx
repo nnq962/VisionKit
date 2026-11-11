@@ -75,13 +75,12 @@ export function ParametersStep({
         </div>
         {classify ? (
           <p className="text-sm text-muted-foreground">
-            Model Classification dùng toàn bộ class; không áp dụng ngưỡng bbox
-            và NMS.
+            Model phân loại sử dụng toàn bộ nhãn.
           </p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2">
-            <ThresholdSlider id="confidence" label="Confidence" hint="Ngưỡng tin cậy tối thiểu · 0–1." value={parameters.confidence} onChange={(confidence) => patch({ confidence })} />
-            <ThresholdSlider id="iou" label="IoU / NMS" hint="Lọc bbox trùng khi model dùng NMS · 0–1." value={parameters.iou} onChange={(iou) => patch({ iou })} />
+            <ThresholdSlider id="confidence" label="Confidence" hint="Độ tin cậy tối thiểu." value={parameters.confidence} onChange={(confidence) => patch({ confidence })} />
+            <ThresholdSlider id="iou" label="IoU / NMS" hint="Ngưỡng lọc khung trùng." value={parameters.iou} onChange={(iou) => patch({ iou })} />
           </div>
         )}
         <div className="grid gap-6 sm:grid-cols-2">
@@ -114,7 +113,7 @@ export function ParametersStep({
               className="text-xs leading-5 text-muted-foreground"
             >
               {fixed
-                ? "Cố định theo input của model ONNX."
+                ? "Cố định theo model ONNX."
                 : "Kích thước xử lý, không đổi file gốc."}
             </p>
           </div>
@@ -127,7 +126,6 @@ export function ParametersStep({
               <SelectTrigger
                 id="device"
                 className="w-full"
-                aria-describedby="device-hint"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -141,12 +139,6 @@ export function ParametersStep({
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <p
-              id="device-hint"
-              className="text-xs leading-5 text-muted-foreground"
-            >
-              Thiết bị sẽ được xác minh trước khi chạy.
-            </p>
           </div>
         </div>
         {source && ["stream", "webcam"].includes(source.kind) && (
@@ -154,12 +146,12 @@ export function ParametersStep({
             <div className="space-y-2">
               <Label htmlFor="live-fps">Giới hạn AI (FPS)</Label>
               <Input id="live-fps" type="number" min="1" max="60" value={parameters.liveFps} onChange={(event) => patch({ liveFps: event.target.value })} />
-              <p className="text-xs leading-5 text-muted-foreground">Lấy frame mới nhất, bỏ frame cũ khi AI xử lý chậm.</p>
+              <p className="text-xs leading-5 text-muted-foreground">Số khung hình AI xử lý mỗi giây.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="live-minutes">Giới hạn chạy (phút)</Label>
               <Input id="live-minutes" type="number" min="1" max="240" step="1" value={parameters.liveMinutes} onChange={(event) => patch({ liveMinutes: event.target.value })} />
-              <p className="text-xs leading-5 text-muted-foreground">Tiếp tục khi chuyển trang; dừng khi hết hạn hoặc bấm Dừng AI.</p>
+              <p className="text-xs leading-5 text-muted-foreground">Tự dừng khi hết thời gian.</p>
             </div>
           </div>
         )}
@@ -231,7 +223,7 @@ export function ParametersStep({
                     NMS giữa các class
                   </span>
                   <span className="block text-xs leading-5 text-muted-foreground">
-                    Lọc bbox trùng mà không phân biệt class, nếu model dùng NMS.
+                    Lọc khung trùng giữa các nhãn.
                   </span>
                 </span>
               </label>

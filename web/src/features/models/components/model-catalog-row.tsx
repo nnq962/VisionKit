@@ -50,13 +50,11 @@ export function ModelCatalogRow({
       : undefined;
   const installed = saved.some((item) => item.id === variant.id);
   return (
-    <li className="py-3 first:pt-0 last:pb-0">
-      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-6">
+    <li className="py-5 first:pt-0 last:pb-0">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_28rem] lg:items-center lg:gap-6">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold">
-              {family.name}
-            </h3>
+            <h3 className="text-sm font-semibold">{family.name}</h3>
             {family.openVocabulary && (
               <span className="rounded-md bg-accent px-2 py-0.5 text-xs text-accent-foreground">
                 Open vocabulary
@@ -72,20 +70,22 @@ export function ModelCatalogRow({
               <ArrowUpRightIcon className="size-4" />
             </a>
           </div>
-          <p className="truncate text-xs text-muted-foreground" title={family.description}>
+          <p
+            className="truncate text-xs text-muted-foreground"
+            title={family.description}
+          >
             {family.description}
           </p>
         </div>
-        <div className="min-w-0 space-y-1.5 lg:w-[25rem]">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 lg:w-full">
+          <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1">
             <Select
               value={selectedTask}
               onValueChange={(value) => setTask(value as ModelTask)}
               disabled={taskFilter !== "all"}
             >
               <SelectTrigger
-                size="sm"
-                className="w-36"
+                className="data-[size=default]:h-9 w-32 sm:w-36"
                 aria-label={`Tác vụ ${family.name}`}
               >
                 <SelectValue />
@@ -101,75 +101,79 @@ export function ModelCatalogRow({
               </SelectContent>
             </Select>
             <div
-              className="flex gap-0.5 rounded-md bg-muted/60 p-0.5"
+              className="flex gap-0.5 rounded-lg bg-muted/60 p-1"
               role="group"
               aria-label={`Kích cỡ ${family.name}`}
             >
               {family.sizes.map((item) => (
                 <Button
                   key={item}
-                  size="icon-xs"
-                  variant={item === size ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  variant={item === size ? "outline" : "ghost"}
                   aria-pressed={item === size}
                   aria-label={`${family.name} ${sizeLabels[item]}`}
                   title={sizeLabels[item]}
                   onClick={() => setSize(item)}
                   className={
-                    item === size ? "text-primary" : "text-muted-foreground"
+                    item === size ? "text-accent-foreground" : "text-muted-foreground"
                   }
                 >
                   {item.toUpperCase()}
                 </Button>
               ))}
             </div>
-            <div className="ml-auto">
-              {job ? (
-                <div className="flex items-center gap-2">
-                  <span
-                    role="status"
-                    className="text-xs tabular-nums text-muted-foreground"
-                  >
-                    {job.status === "queued"
-                      ? "Đang chờ"
-                      : `Đang tải ${job.progress}%`}
-                  </span>
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    disabled={busy.includes(variant.id)}
-                    aria-label={`Huỷ tải ${variant.filename}`}
-                    onClick={() => onCancel(variant.id)}
-                  >
-                    <XIcon />
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  variant={installed ? "secondary" : "outline"}
-                  size="sm"
-                  disabled={installed || !ready || busy.includes(variant.id)}
-                  onClick={() => onDownload(variant)}
-                  aria-label={`${installed ? "Đã lưu" : "Tải"} ${variant.filename}`}
+          </div>
+          <div className="col-start-2 row-start-2 sm:row-span-2 sm:row-start-1 sm:self-start">
+            {job ? (
+              <div className="flex items-center gap-2">
+                <span
+                  role="status"
+                  className="text-xs tabular-nums text-muted-foreground"
                 >
-                  {installed ? <CheckIcon /> : <DownloadIcon />}
-                  {installed
-                    ? "Đã lưu"
-                    : busy.includes(variant.id)
-                      ? "Đang gửi…"
-                      : latest?.status === "failed"
-                        ? "Thử lại"
-                        : "Tải về"}
+                  {job.status === "queued"
+                    ? "Đang chờ"
+                    : `Đang tải ${job.progress}%`}
+                </span>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  disabled={busy.includes(variant.id)}
+                  aria-label={`Huỷ tải ${variant.filename}`}
+                  onClick={() => onCancel(variant.id)}
+                >
+                  <XIcon />
                 </Button>
-              )}
-            </div>
+              </div>
+            ) : (
+              <Button
+                variant={installed ? "secondary" : "outline"}
+                size="lg"
+                className="min-w-26"
+                disabled={installed || !ready || busy.includes(variant.id)}
+                onClick={() => onDownload(variant)}
+                aria-label={`${installed ? "Đã lưu" : "Tải"} ${variant.filename}`}
+              >
+                {installed ? <CheckIcon /> : <DownloadIcon />}
+                {installed
+                  ? "Đã lưu"
+                  : busy.includes(variant.id)
+                    ? "Đang gửi…"
+                    : latest?.status === "failed"
+                      ? "Thử lại"
+                      : "Tải về"}
+              </Button>
+            )}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="min-w-0 truncate text-xs text-muted-foreground" title={variant.filename}>
-              {variant.filename}
-            </span>
-          </div>
+          <span
+            className="col-start-1 row-start-2 min-w-0 truncate text-xs text-muted-foreground"
+            title={variant.filename}
+          >
+            {variant.filename}
+          </span>
           {!job && latest?.status === "failed" && (
-            <p className="text-xs text-destructive">{latest.error}</p>
+            <p className="col-span-2 text-xs text-destructive">
+              {latest.error}
+            </p>
           )}
           {job && (
             <div
@@ -178,7 +182,7 @@ export function ModelCatalogRow({
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={job.progress}
-              className="h-1 overflow-hidden rounded bg-muted"
+              className="col-span-2 h-1 overflow-hidden rounded bg-muted"
             >
               <div
                 className="h-full bg-primary transition-[width] duration-200 motion-reduce:transition-none"

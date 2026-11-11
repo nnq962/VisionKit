@@ -5,7 +5,6 @@ import { formatBytes } from "@/features/sources/media-metadata";
 import { modelTaskLabel } from "../catalog";
 import type { StoredModel } from "../api";
 import type { ModelDraft } from "../model-draft-storage";
-import { DetailDisclosure } from "@/components/detail-disclosure";
 
 export function ModelDetails({
   model,
@@ -59,6 +58,84 @@ export function ModelDetails({
           ["SHA-256", model.sha256.slice(0, 12) + "…"],
         ]
       : [];
+  if (compact) {
+    const dimensions =
+      metadata?.imgsz?.join(" × ") ||
+      metadata?.input_shape
+        ?.slice(-2)
+        .map((value) => value ?? "Động")
+        .join(" × ");
+    const summary = model
+      ? [
+          ["Tác vụ", modelTaskLabel(model.task)],
+          ["Họ model", family?.toUpperCase() ?? model.familyName],
+          ["Định dạng", (model.format ?? "pt").toUpperCase()],
+          ["Dung lượng", formatBytes(model.sizeBytes)],
+          ["Đầu vào", dimensions || "Chưa xác định"],
+          [
+            "Số nhãn",
+            String(
+              metadata?.class_count ??
+                (metadata?.names ? Object.keys(metadata.names).length : "—"),
+            ),
+          ],
+          ...(metadata?.parameters
+            ? [["Tham số", `${(metadata.parameters / 1e6).toFixed(2)} M`]]
+            : []),
+          ...(metadata?.model_type ? [["Kiến trúc", metadata.model_type]] : []),
+        ]
+      : details;
+    return (
+      <aside
+        aria-label="Thông tin model"
+        className="min-w-0 space-y-4 border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+      >
+        <div className="space-y-1">
+          <h3 className="break-words text-base font-semibold">
+            {title || "Thông tin model"}
+          </h3>
+          {model && selection && (
+            <ModelMetadataStatus model={model} selection={selection} compact />
+          )}
+          {file && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Đang chuẩn bị model…
+            </p>
+          )}
+          {model?.expiresAt && (
+            <p className="text-xs text-muted-foreground">
+              Model tạm · có thể chạy ngay hoặc lưu vào thư viện.
+            </p>
+          )}
+        </div>
+        {title ? (
+          <>
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 border-y py-3">
+              {summary.map(([label, value]) => (
+                <div key={label} className="min-w-0 space-y-1">
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
+                  <dd className="break-words text-sm font-medium">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            {model && selection && (
+              <ModelMetadataPanel
+                key={model.id}
+                model={model}
+                selection={selection}
+                compact
+              />
+            )}
+          </>
+        ) : (
+          <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
+            <BoxIcon className="size-8" strokeWidth={1.5} />
+            <p className="text-sm">Chọn model để xem thông tin</p>
+          </div>
+        )}
+      </aside>
+    );
+  }
   return (
     <aside
       aria-label="Thông tin model"
@@ -68,22 +145,36 @@ export function ModelDetails({
       {title ? (
         <>
           <div className="space-y-2">
-            <p className={`${compact ? "truncate" : "break-all"} text-sm font-medium`} title={title}>{title}</p>
-            {compact && model && <p className="text-xs text-muted-foreground">{modelTaskLabel(model.task)} · {(model.format ?? "pt").toUpperCase()} · {formatBytes(model.sizeBytes)}</p>}
-            {(!compact || file || model?.expiresAt) && <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              {!file && <CheckIcon className="size-3.5" />}
-              {file
-                ? "Đang chuẩn bị model"
-                : model?.expiresAt
-                  ? "Model tạm · Chưa lưu thư viện"
-                  : "Đã lưu trong thư viện"}
-            </p>}
+            <p
+              className={`${compact ? "truncate" : "break-all"} text-sm font-medium`}
+              title={title}
+            >
+              {title}
+            </p>
+            {compact && model && (
+              <p className="text-xs text-muted-foreground">
+                {modelTaskLabel(model.task)} ·{" "}
+                {(model.format ?? "pt").toUpperCase()} ·{" "}
+                {formatBytes(model.sizeBytes)}
+              </p>
+            )}
+            {(!compact || file || model?.expiresAt) && (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {!file && <CheckIcon className="size-3.5" />}
+                {file
+                  ? "Đang chuẩn bị model"
+                  : model?.expiresAt
+                    ? "Model tạm · Chưa lưu thư viện"
+                    : "Đã lưu trong thư viện"}
+              </p>
+            )}
             {model && selection && (
               <ModelMetadataStatus model={model} selection={selection} />
             )}
           </div>
-          <DetailDisclosure enabled={compact} title="Chi tiết model" open={Boolean(model && ["needs_input", "failed", "unavailable", "manual"].includes(model.inspection.status))}>
-          <div className={`space-y-0 ${compact ? "mt-3 max-h-80 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]" : ""}`}>
+          <div
+            className={`space-y-0 ${compact ? "mt-3 max-h-80 overflow-y-auto overscroll-contain pr-1" : ""}`}
+          >
             <dl className="divide-y text-sm">
               {details.map(([label, value]) => (
                 <div
@@ -112,7 +203,6 @@ export function ModelDetails({
               />
             ) : null}
           </div>
-          </DetailDisclosure>
         </>
       ) : (
         <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-lg bg-muted/30 text-muted-foreground">

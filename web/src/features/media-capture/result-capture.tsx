@@ -112,12 +112,12 @@ export function ResultCapture({ children, name, temporal, controlsTarget }: { ch
   const controls = (
     <div className={controlsTarget ? "contents" : "flex flex-wrap items-center gap-2"} aria-label="Lưu kết quả">
       {temporal && (state === "idle" ? (
-        <Button type="button" size="sm" variant="ghost" disabled={!ready || !supported} onClick={start}>
-          <CircleIcon className="text-destructive" /> Bắt đầu ghi
+        <Button type="button" size="sm" variant="ghost" disabled={!ready || !supported} onClick={start} title="Ghi video không âm thanh. Tự lưu khi dừng ghi hoặc rời trang.">
+          <CircleIcon className="text-destructive" /> Ghi video
         </Button>
       ) : (
-        <Button type="button" size="sm" variant="destructive" disabled={state === "stopping"} onClick={() => void controller.current?.stop()}>
-          <SquareIcon /> {state === "stopping" ? "Đang lưu video…" : "Dừng và lưu video"}
+        <Button type="button" size="sm" variant="destructive" disabled={state === "stopping"} onClick={() => void controller.current?.stop()} title="Dừng và lưu video. Bản ghi không có âm thanh.">
+          <SquareIcon /> {state === "stopping" ? "Đang lưu…" : "Dừng ghi"}
         </Button>
       ))}
       <Button type="button" size="sm" variant="ghost" disabled={!ready || savingImage} onClick={() => void snapshot()}>
@@ -136,8 +136,7 @@ export function ResultCapture({ children, name, temporal, controlsTarget }: { ch
     <div className="space-y-3">
       <div ref={container}>{children}</div>
       {controlsTarget ? createPortal(controls, controlsTarget) : controlsTarget === undefined ? controls : null}
-      {temporal && <p className="text-xs text-muted-foreground">Ghi kèm kết quả AI, không âm thanh.{state !== "idle" ? " Tự lưu khi ẩn tab hoặc rời trang." : ""}</p>}
-      {temporal && !supported && <p className="text-xs text-muted-foreground">Nếu nút ghi không khả dụng, hãy dùng trình duyệt hỗ trợ ghi video như Chrome hoặc Edge.</p>}
+      {temporal && !supported && <p className="text-xs text-muted-foreground">Trình duyệt chưa hỗ trợ ghi video. Thử Chrome hoặc Edge.</p>}
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
       {notice && <p role="status" className="text-xs text-muted-foreground">{notice}</p>}
     </div>

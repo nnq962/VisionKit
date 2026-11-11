@@ -18,10 +18,10 @@ export function BrowserSourceInput({
     <div className="space-y-4">
       {kind === "webcam" && (
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">Webcam trên máy chạy AI. Chỉ dùng khi trình duyệt và server chạy trên cùng máy.</p>
-          <Label htmlFor="webcam-index">ID webcam trên máy AI</Label>
+          <p className="text-sm text-muted-foreground">Dùng webcam trên cùng máy đang chạy VisionKit.</p>
+          <Label htmlFor="webcam-index">ID webcam</Label>
           <Input id="webcam-index" type="number" min="0" max="15" step="1" value={deviceIndex} disabled={busy} onChange={(event) => { setDeviceIndex(event.target.value); selection.select(null); }} />
-          <p className="text-xs text-muted-foreground">Mặc định 0. Kiểm tra lấy ảnh sau khi camera ổn định rồi nhả camera. Chạy AI để xem hình liên tục.</p>
+          <p className="text-xs text-muted-foreground">Mặc định 0 · kiểm tra để xem ảnh thử.</p>
         </div>
       )}
       {kind === "screen" && (

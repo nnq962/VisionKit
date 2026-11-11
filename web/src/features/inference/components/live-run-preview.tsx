@@ -42,7 +42,7 @@ export function LiveRunPreview({
   }, [stream.mediaStream]);
   return (
     <div className="space-y-3">
-      <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+      <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
         <video
           data-capture-media
           ref={bind}
@@ -60,7 +60,7 @@ export function LiveRunPreview({
         )}
       </div>
       <p className="text-xs leading-5 text-muted-foreground">
-        BBox theo frame mới nhất, có thể trễ nhẹ và tự xoá khi kết quả cũ.
+        Nhận diện trực tiếp có thể trễ nhẹ so với video.
       </p>
     </div>
   );

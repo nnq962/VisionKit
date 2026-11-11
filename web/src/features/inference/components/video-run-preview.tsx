@@ -69,7 +69,7 @@ export function VideoRunPreview({
         result={synchronizedResult}
         options={options}
         staleAfterMs={0}
-        className="rounded-lg"
+        className="w-full rounded-lg"
         videoProps={{
           controls: false,
           muted: true,

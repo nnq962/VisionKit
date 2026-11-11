@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { LibraryScrollArea } from "@/components/library-scroll-area";
+import { useState } from "react";
+import { LibraryList } from "@/components/library-list";
 import Link from "next/link";
 import {
   BoxIcon,
@@ -21,7 +21,6 @@ export function ModelLibraryPicker({
 }) {
   const [search, setSearch] = useState("");
   const [limit, setLimit] = useState(20);
-  const scroll = useRef<HTMLDivElement>(null);
   const query = search.trim().toLocaleLowerCase("vi");
   const items = selection.library.filter((item) =>
     `${item.name ?? ""} ${item.filename} ${item.familyName} ${item.format ?? "pt"} ${modelTaskLabel(item.task)}`
@@ -30,24 +29,23 @@ export function ModelLibraryPicker({
   );
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
-          <SearchIcon className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
-            className="pl-9"
+            className="h-9 pl-9"
             aria-label="Tìm model đã lưu"
             placeholder="Tìm model…"
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
               setLimit(20);
-              scroll.current?.scrollTo({ top: 0 });
             }}
           />
         </div>
         <Button
-          variant="outline"
-          size="icon"
+          variant="ghost"
+          size="icon-lg"
           aria-label="Làm mới model"
           disabled={selection.loading}
           onClick={selection.refresh}
@@ -59,97 +57,107 @@ export function ModelLibraryPicker({
           />
         </Button>
       </div>
-      <LibraryScrollArea label="Model đã lưu" scrollRef={scroll}>
-      {selection.libraryError ? (
-        <div role="alert" className="space-y-3">
-          <p className="text-sm text-destructive">{selection.libraryError}</p>
-          <Button variant="outline" onClick={selection.refresh}>
-            Thử lại
-          </Button>
-        </div>
-      ) : selection.loading && !selection.library.length ? (
-        <p
-          role="status"
-          className="py-10 text-center text-sm text-muted-foreground"
-        >
-          Đang tải model…
-        </p>
-      ) : items.length ? (
-        <fieldset className="min-w-0">
-          <legend className="sr-only">Chọn một model đã lưu</legend>
-          <div className="divide-y">
-            {items.slice(0, limit).map((item) => (
-              <div key={item.id} className="py-0.5 first:pt-0 last:pb-0">
-              <label
-                className={`relative flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2.5 text-left focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring ${selection.selectedId === item.id ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"}`}
-              >
-                <input
-                  className="sr-only"
-                  type="radio"
-                  name="pipeline-model"
-                  value={item.id}
-                  checked={selection.selectedId === item.id}
-                  onChange={() => selection.update({ selectedId: item.id })}
-                  disabled={selection.validating}
-                />
-                <BoxIcon
-                  className="size-4 shrink-0 text-muted-foreground"
-                  strokeWidth={1.5}
-                />
-                <span className="min-w-0 flex-1 space-y-1">
-                  <span title={item.name ?? item.filename}
-                    className="block truncate text-sm font-medium">
-                    {item.name ?? item.filename}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {modelTaskLabel(item.task)} ·{" "}
-                    {(item.format ?? "pt").toUpperCase()} ·{" "}
-                    {formatBytes(item.sizeBytes)}
-                  </span>
-                </span>
-                {selection.selectedId === item.id && (
-                  <CheckIcon className="size-4 shrink-0" />
-                )}
-              </label>
-              </div>
-            ))}
+      <LibraryList label="Model đã lưu">
+        {selection.libraryError ? (
+          <div role="alert" className="space-y-3">
+            <p className="text-sm text-destructive">{selection.libraryError}</p>
+            <Button variant="outline" onClick={selection.refresh}>
+              Thử lại
+            </Button>
           </div>
-        </fieldset>
-      ) : (
-        <div className="flex min-h-44 flex-col items-center justify-center gap-3 text-center">
-          <BoxIcon className="size-7 text-muted-foreground" strokeWidth={1.5} />
-          <p className="text-sm text-muted-foreground">
-            {query ? "Không tìm thấy model" : "Chưa có model đã lưu"}
+        ) : selection.loading && !selection.library.length ? (
+          <p
+            role="status"
+            className="py-10 text-center text-sm text-muted-foreground"
+          >
+            Đang tải model…
           </p>
-          <Button variant="outline" asChild>
-            <Link href="/models">
-              Mở Model Hub
-              <ArrowUpRightIcon />
-            </Link>
-          </Button>
-        </div>
-      )}
-      </LibraryScrollArea>
+        ) : items.length ? (
+          <fieldset className="min-w-0">
+            <legend className="sr-only">Chọn một model đã lưu</legend>
+            <div className="divide-y">
+              {items.slice(0, limit).map((item) => (
+                <label
+                  key={item.id}
+                  className={`flex min-w-0 cursor-pointer items-center gap-3 px-4 py-4 text-left transition-colors first:rounded-t-xl last:rounded-b-xl ${selection.selectedId === item.id ? "bg-primary/5" : "hover:bg-muted/50"}`}
+                >
+                  <span className="relative flex size-4 shrink-0">
+                    <input
+                      className="peer size-4 cursor-pointer appearance-none rounded border border-input bg-background checked:border-ring checked:bg-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
+                      type="checkbox"
+                      name="pipeline-model"
+                      value={item.id}
+                      checked={selection.selectedId === item.id}
+                      onChange={(event) =>
+                        selection.update({
+                          selectedId: event.target.checked ? item.id : null,
+                        })
+                      }
+                      disabled={selection.validating}
+                    />
+                    <CheckIcon
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 hidden size-4 text-primary-foreground peer-checked:block"
+                      strokeWidth={2.5}
+                    />
+                  </span>
+                  <span className="min-w-0 flex-1 space-y-1">
+                    <span
+                      title={item.name ?? item.filename}
+                      className="block truncate text-sm font-medium"
+                    >
+                      {item.name ?? item.filename}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {modelTaskLabel(item.task)} ·{" "}
+                      {(item.format ?? "pt").toUpperCase()} ·{" "}
+                      {formatBytes(item.sizeBytes)}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ) : (
+          <div className="flex min-h-44 flex-col items-center justify-center gap-3 text-center">
+            <BoxIcon
+              className="size-7 text-muted-foreground"
+              strokeWidth={1.5}
+            />
+            <p className="text-sm text-muted-foreground">
+              {query ? "Không tìm thấy model" : "Chưa có model đã lưu"}
+            </p>
+            <Button variant="outline" asChild>
+              <Link href="/models">
+                Mở Model Hub
+                <ArrowUpRightIcon />
+              </Link>
+            </Button>
+          </div>
+        )}
+      </LibraryList>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-      <span className="tabular-nums">{Math.min(items.length, limit)} / {items.length} model</span>
-      {items.length > limit && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setLimit((value) => value + 20)}
-        >
-          Xem thêm
-        </Button>
-      )}
-      {items.length > 0 && (
-        <Link
-          href="/models"
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
-        >
-          Model Hub
-          <ArrowUpRightIcon className="size-3" />
-        </Link>
-      )}
+        <span className="tabular-nums">
+          {Math.min(items.length, limit)} / {items.length} model
+        </span>
+        {items.length > limit && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setLimit((value) => value + 20)}
+          >
+            Xem thêm
+          </Button>
+        )}
+        {items.length > 0 && (
+          <Link
+            href="/models"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          >
+            Model Hub
+            <ArrowUpRightIcon className="size-3" />
+          </Link>
+        )}
       </div>
     </div>
   );

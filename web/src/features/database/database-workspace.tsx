@@ -10,29 +10,32 @@ import { ModelDatabase } from "./model-database";
 export function DatabaseWorkspace() {
   const [section, setSection] = useState<"sources" | "models">("sources");
   return (
-    <WorkspacePage
-      title="Database"
-      description="Quản lý source và model đã lưu."
-    >
-      <div role="group" aria-label="Loại dữ liệu" className="flex gap-2">
-        <Button
-          variant={section === "sources" ? "secondary" : "ghost"}
-          aria-pressed={section === "sources"}
-          onClick={() => setSection("sources")}
+    <WorkspacePage title="Database" hideHeading>
+      <div className="space-y-6">
+        <div
+          role="group"
+          aria-label="Loại dữ liệu"
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg bg-muted/60 p-1"
         >
-          <ImagesIcon />
-          Source
-        </Button>
-        <Button
-          variant={section === "models" ? "secondary" : "ghost"}
-          aria-pressed={section === "models"}
-          onClick={() => setSection("models")}
-        >
-          <BoxIcon />
-          Model
-        </Button>
+          <Button
+            variant={section === "sources" ? "outline" : "ghost"}
+            aria-pressed={section === "sources"}
+            onClick={() => setSection("sources")}
+          >
+            <ImagesIcon />
+            Nguồn
+          </Button>
+          <Button
+            variant={section === "models" ? "outline" : "ghost"}
+            aria-pressed={section === "models"}
+            onClick={() => setSection("models")}
+          >
+            <BoxIcon />
+            Model
+          </Button>
+        </div>
+        {section === "sources" ? <SourceDatabase /> : <ModelDatabase />}
       </div>
-      {section === "sources" ? <SourceDatabase /> : <ModelDatabase />}
     </WorkspacePage>
   );
 }

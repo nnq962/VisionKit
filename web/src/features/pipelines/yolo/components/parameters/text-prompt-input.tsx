@@ -22,14 +22,17 @@ export function TextPromptInput({ value, onChange }: { value: string; onChange: 
         className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         placeholder="person, car, laptop, cell phone" />
       <p id="text-prompts-hint" className="text-xs leading-5 text-muted-foreground">
-        Nhập tên vật thể bằng tiếng Anh, cách nhau bằng dấu phẩy hoặc xuống dòng. Tối đa 80 vật thể; nhãn kết quả dùng tên đã nhập.
+        Tên tiếng Anh, cách nhau bằng dấu phẩy hoặc xuống dòng · tối đa 80.
       </p>
-      <div className="flex flex-wrap gap-2" aria-label="Vật thể thường gặp">
+      <details>
+      <summary className="cursor-pointer text-sm font-medium">Gợi ý vật thể</summary>
+      <div className="flex flex-wrap gap-2 pt-3" aria-label="Vật thể thường gặp">
         {commonTextPrompts.map(([label, prompt]) => (
           <Button key={prompt} size="sm" variant={prompts.some((item) => item.toLowerCase() === prompt) ? "secondary" : "outline"}
             aria-pressed={prompts.some((item) => item.toLowerCase() === prompt)} title={prompt} onClick={() => toggle(prompt)}>{label}</Button>
         ))}
       </div>
+      </details>
     </div>
   );
 }

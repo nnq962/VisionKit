@@ -15,13 +15,13 @@ export function ParameterContext({
   parameters: YoloParameters;
 }) {
   const rows = [
-    ["Source", source?.name ?? "Chưa chọn"],
+    ["Nguồn", source?.name ?? "Chưa chọn"],
     ["Loại nguồn", source ? sourceLabel(source.kind) : "—"],
     ["Model", model?.name ?? model?.filename ?? "Chưa chọn"],
     ["Tác vụ", modelTaskLabel(model?.task ?? null)],
     ["Định dạng", model?.format?.toUpperCase() ?? "—"],
     [
-      "Input trong metadata",
+      "Kích thước model",
       fixedImageSize(model)
         ? imageSizeLabel(fixedImageSize(model)!)
         : model?.inspection.metadata?.imgsz?.length === 2
@@ -37,7 +37,7 @@ export function ParameterContext({
   return (
     <aside
       aria-label="Ngữ cảnh thông số"
-      className="min-w-0 space-y-4 border-t pt-6 lg:sticky lg:top-24 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+      className="min-w-0 space-y-4 border-t pt-6 lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
     >
       <div className="space-y-2">
         <h3 className="text-sm font-semibold">Áp dụng cho</h3>
@@ -53,7 +53,7 @@ export function ParameterContext({
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer">Chi tiết đầu vào</summary>
         <dl className="divide-y pt-3">
-          {rows.filter(([label]) => !["Source", "Model"].includes(label)).map(([label, value]) => (
+          {rows.filter(([label]) => !["Nguồn", "Model"].includes(label)).map(([label, value]) => (
             <div key={label} className="flex justify-between gap-3 py-2">
               <dt>{label}</dt><dd className="min-w-0 truncate text-foreground" title={value}>{value}</dd>
             </div>
@@ -70,8 +70,8 @@ export function ParameterContext({
           {parameters.textPromptEnabled
             ? `${parseTextPrompts(parameters.textPrompts).length} vật thể theo text prompt`
             : parameters.classMode === "all"
-            ? "Toàn bộ class"
-            : `${parameters.classes.length} class đã chọn`}
+            ? "Tất cả đối tượng"
+            : `${parameters.classes.length} đối tượng đã chọn`}
         </p>
       </div>
     </aside>

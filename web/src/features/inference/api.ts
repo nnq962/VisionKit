@@ -136,5 +136,5 @@ export function eventsUrl(id: string) {
 
 export async function finishRun(id: string) {
   const response = await fetch(`${base}/${encodeURIComponent(id)}/resources`, { method: "DELETE" });
-  if (!response.ok) throw new Error("Chưa dọn được tài nguyên lượt chạy. Bấm Hoàn thành để thử lại.");
+  if (!response.ok) throw new Error("Chưa dọn được tài nguyên lượt chạy. Bấm Kết thúc phiên để thử lại.");
 }

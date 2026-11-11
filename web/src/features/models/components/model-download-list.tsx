@@ -34,10 +34,13 @@ export function ModelDownloadList({
       {jobs.map((job) => {
         const active = ["queued", "downloading"].includes(job.status);
         return (
-          <li key={job.jobId} className="space-y-2 py-3 first:pt-0 last:pb-0">
+          <li key={job.jobId} className="space-y-2 py-4 first:pt-0 last:pb-0">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1 space-y-1">
-                <p className="truncate text-sm font-medium" title={job.variant.filename}>
+                <p
+                  className="truncate text-sm font-medium"
+                  title={job.variant.filename}
+                >
                   {job.variant.filename}
                 </p>
                 <p className="truncate text-xs tabular-nums text-muted-foreground">
@@ -49,7 +52,7 @@ export function ModelDownloadList({
               {active ? (
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="lg"
                   disabled={busy.includes(job.variant.id)}
                   onClick={() => onCancel(job.variant.id)}
                 >
@@ -58,7 +61,7 @@ export function ModelDownloadList({
               ) : ["failed", "cancelled"].includes(job.status) ? (
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="lg"
                   disabled={busy.includes(job.variant.id)}
                   onClick={() => onRetry(job.variant)}
                 >

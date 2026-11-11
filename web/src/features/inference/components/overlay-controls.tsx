@@ -51,16 +51,14 @@ export function OverlayControls({
           </label>
         ))}
       </div>
-      {pose && (
+      {pose && !canConnect && (
         <p className="text-xs leading-5 text-muted-foreground">
-          {canConnect
-            ? "Đường nối theo COCO 17 khớp."
-            : "Đường nối hiện hỗ trợ COCO 17 khớp."}
+          Đường nối hiện hỗ trợ COCO 17 khớp.
         </p>
       )}
       {classify && (
         <p className="text-xs leading-5 text-muted-foreground">
-          Model phân loại không có bbox hoặc keypoint.
+          Kết quả phân loại hiển thị ở phần thống kê.
         </p>
       )}
     </section>

@@ -19,9 +19,11 @@ export function useInferenceRun(
 ) {
   const [run, setRun] = useState<InferenceRun | null>(null);
   const [error, setError] = useState("");
+  const [connectionError, setConnectionError] = useState("");
   const [starting, setStarting] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [recovering, setRecovering] = useState(true);
   const pending = useRef(false);
   const mounted = useRef(true);
   const upload = useRef<AbortController | null>(null);
@@ -43,16 +45,21 @@ export function useInferenceRun(
     } catch {
       /* sessionStorage best effort. */
     }
-    if (id)
-      void restoreRun(
-        () => getRun(id!, controller.signal),
-        source?.kind,
-        controller.signal,
-      )
-        .then((next) => {
-          if (next && !controller.signal.aborted) setRun(next);
-        })
-        .catch(() => {});
+    const recovery = id
+      ? restoreRun(
+          () => getRun(id!, controller.signal),
+          source?.kind,
+          controller.signal,
+        )
+      : Promise.resolve(null);
+    void recovery
+      .then((next) => {
+        if (next && !controller.signal.aborted) setRun(next);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setRecovering(false);
+      });
     return () => controller.abort();
   }, [selectionKey, source?.kind]);
   const active = Boolean(run && ["queued", "running"].includes(run.status));
@@ -80,7 +87,7 @@ export function useInferenceRun(
       try {
         const next = await getRun(id, controller.signal);
         if (!controller.signal.aborted) {
-          setError("");
+          setConnectionError("");
           setRun((current) =>
             current?.id === next.id && current.updated_at >= next.updated_at
               ? current
@@ -88,7 +95,8 @@ export function useInferenceRun(
           );
         }
       } catch (reason) {
-        if (!controller.signal.aborted) setError((reason as Error).message);
+        if (!controller.signal.aborted)
+          setConnectionError((reason as Error).message);
       } finally {
         if (!controller.signal.aborted)
           timer = setTimeout(() => void poll(), 1000);
@@ -103,10 +111,11 @@ export function useInferenceRun(
   }, [run?.id, active]);
   return {
     run,
-    error,
+    error: error || connectionError,
     starting,
     stopping,
     finishing,
+    recovering,
     active,
     async finish(complete: () => Promise<void>) {
       if (!run || active || pending.current) return;
@@ -116,7 +125,9 @@ export function useInferenceRun(
       restoring.current?.abort();
       try {
         await finishRun(run.id);
-        try { sessionStorage.removeItem(`visionkit:run:${selectionKey}`); } catch {}
+        try {
+          sessionStorage.removeItem(`visionkit:run:${selectionKey}`);
+        } catch {}
         await complete();
         if (mounted.current) setRun(null);
       } catch (reason) {
@@ -127,7 +138,8 @@ export function useInferenceRun(
       }
     },
     async start() {
-      if (pending.current || active || !source || !modelId) return;
+      if (pending.current || recovering || active || !source || !modelId)
+        return;
       restoring.current?.abort();
       pending.current = true;
       setStarting(true);
@@ -156,14 +168,23 @@ export function useInferenceRun(
       }
     },
     async stop() {
-      if (!run || stopping) return;
+      if (!run || pending.current || recovering) return false;
+      pending.current = true;
       setStopping(true);
+      setError("");
       try {
         const next = await cancelRun(run.id);
         if (mounted.current) setRun(next);
+        if (["queued", "running"].includes(next.status)) {
+          if (mounted.current) setError("AI chưa dừng. Hãy thử lại.");
+          return false;
+        }
+        return true;
       } catch (reason) {
         if (mounted.current) setError((reason as Error).message);
+        return false;
       } finally {
+        pending.current = false;
         if (mounted.current) setStopping(false);
       }
     },

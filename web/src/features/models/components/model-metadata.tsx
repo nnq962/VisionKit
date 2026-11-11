@@ -27,8 +27,10 @@ const labels = {
 export function ModelMetadataStatus({
   model,
   selection,
+  compact = false,
 }: {
   model: StoredModel;
+  compact?: boolean;
   selection: Pick<
     ModelSelection,
     "inspecting" | "retryInspection" | "configure"
@@ -46,21 +48,26 @@ export function ModelMetadataStatus({
           {active && (
             <LoaderCircleIcon className="size-3.5 animate-spin motion-reduce:animate-none" />
           )}
-          {labels[inspection.status]}
+          {compact && inspection.status === "ready"
+            ? "Đã đọc thông tin"
+            : labels[inspection.status]}
         </p>
         {!active && (
           <Button
-            size="sm"
+            size={compact ? "icon" : "sm"}
             variant="ghost"
+            aria-label="Đọc lại thông tin model"
+            title="Đọc lại thông tin model"
             disabled={selection.inspecting}
             onClick={() => void selection.retryInspection()}
           >
             <RefreshCwIcon />
-            {inspection.status === "ready" ? "Đọc lại" : "Thử đọc lại"}
+            {!compact &&
+              (inspection.status === "ready" ? "Đọc lại" : "Thử đọc lại")}
           </Button>
         )}
       </div>
-      {inspection.message && (
+      {inspection.message && (!compact || inspection.status !== "ready") && (
         <p className="text-xs leading-5 text-muted-foreground">
           {inspection.message}
         </p>
@@ -72,8 +79,10 @@ export function ModelMetadataStatus({
 export function ModelMetadataPanel({
   model,
   selection,
+  compact = false,
 }: {
   model: StoredModel;
+  compact?: boolean;
   selection: Pick<
     ModelSelection,
     "inspecting" | "retryInspection" | "configure"
@@ -125,10 +134,13 @@ export function ModelMetadataPanel({
     : [];
   return (
     <section className="space-y-4" aria-label="Metadata tự nhận diện">
-      {rows.length > 0 && (
+      {!compact && rows.length > 0 && (
         <dl className="divide-y border-t text-sm">
           {rows.map(([label, value]) => (
-            <div key={label} className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-4 py-3">
+            <div
+              key={label}
+              className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-4 py-3"
+            >
               <dt className="shrink-0 text-muted-foreground">{label}</dt>
               <dd className="min-w-0 break-all text-left font-medium">
                 {value}
@@ -139,18 +151,25 @@ export function ModelMetadataPanel({
       )}
       {names.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium">Classes</p>
-          <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {(showAll ? names : names.slice(0, 8)).map((name, index) => (
-              <span
-                key={`${index}-${name}`}
-                className="max-w-full break-words rounded bg-muted px-2 py-1 text-xs text-muted-foreground"
-              >
-                {name}
-              </span>
-            ))}
+          <p className="text-sm font-medium">Nhãn nhận diện</p>
+          <div
+            role={compact ? undefined : "region"}
+            aria-label={compact ? undefined : "Danh sách nhãn nhận diện"}
+            tabIndex={compact ? undefined : 0}
+            className={`flex flex-wrap gap-1.5 ${compact ? "" : "max-h-48 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring"}`}
+          >
+            {(compact || showAll ? names : names.slice(0, 8)).map(
+              (name, index) => (
+                <span
+                  key={`${index}-${name}`}
+                  className="max-w-full break-words rounded bg-muted px-2 py-1 text-xs text-muted-foreground"
+                >
+                  {name}
+                </span>
+              ),
+            )}
           </div>
-          {names.length > 8 && (
+          {!compact && names.length > 8 && (
             <Button
               size="sm"
               variant="ghost"
@@ -230,7 +249,7 @@ export function ModelMetadataPanel({
           </div>
         </form>
       )}
-      {inspection.status === "ready" && (
+      {!compact && inspection.status === "ready" && (
         <p className="text-xs leading-5 text-muted-foreground">
           Metadata đã được đọc; chưa phải kết quả chạy inference.
         </p>
