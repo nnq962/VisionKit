@@ -44,6 +44,7 @@ export function LiveRunPreview({
     <div className="space-y-3">
       <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
         <video
+          data-capture-media
           ref={bind}
           autoPlay
           muted
@@ -51,7 +52,7 @@ export function LiveRunPreview({
           aria-label={`AI trực tiếp ${name}`}
           className="size-full object-contain"
         />
-        <canvas ref={canvasRef} style={canvasStyle} aria-hidden="true" />
+        <canvas ref={canvasRef} style={canvasStyle} aria-hidden="true" data-capture-overlay />
         {stream.status !== "playing" && (
           <p role="status" className="absolute inset-0 flex items-center justify-center bg-background/90 px-6 text-center text-sm text-muted-foreground">
             {stream.error ?? "Đang kết nối video…"}

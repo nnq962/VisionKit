@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
       { source: "/api/v1/:path*", destination: `${backend}/api/v1/:path*` },
     ];
   },
-  experimental: { proxyClientMaxBodySize: "210mb" },
+  experimental: { proxyClientMaxBodySize: "210mb", proxyTimeout: 330_000 },
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

@@ -37,28 +37,30 @@ export function ParameterContext({
   return (
     <aside
       aria-label="Ngữ cảnh thông số"
-      className="min-w-0 space-y-6 border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+      className="min-w-0 space-y-4 border-t pt-6 lg:sticky lg:top-24 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
     >
       <div className="space-y-2">
         <h3 className="text-sm font-semibold">Áp dụng cho</h3>
-        <p className="text-xs text-muted-foreground">
-          Kiểm tra source và model trước khi chạy.
-        </p>
       </div>
-      <dl className="divide-y text-sm">
-        {rows.map(([label, value]) => (
-          <div
-            key={label}
-            className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-4 py-3 first:pt-0"
-          >
-            <dt className="shrink-0 text-muted-foreground">{label}</dt>
-            <dd className="min-w-0 break-words text-left font-medium">
-              {value}
-            </dd>
+      <dl className="space-y-3 text-sm">
+        {rows.slice(0, 3).filter(([label]) => label !== "Loại nguồn").map(([label, value]) => (
+          <div key={label} className="space-y-1">
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="truncate font-medium" title={value}>{value}</dd>
           </div>
         ))}
       </dl>
-      <div className="space-y-3 border-t pt-6">
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">Chi tiết đầu vào</summary>
+        <dl className="divide-y pt-3">
+          {rows.filter(([label]) => !["Source", "Model"].includes(label)).map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-3 py-2">
+              <dt>{label}</dt><dd className="min-w-0 truncate text-foreground" title={value}>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
+      <div className="space-y-2 border-t pt-4">
         <h3 className="text-sm font-semibold">Cấu hình chạy</h3>
         <p className="text-sm">
           {imageSizeLabel(parameters.imageSize)} ·{" "}

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from app.api.dependencies import get_source_service
 from app.core.errors import SourceError
@@ -82,6 +83,61 @@ def upload_source(
         )
     finally:
         file.file.close()
+
+
+# -------------------------- Chuẩn bị video bản nháp --------------------------
+@router.post("/prepare-video", response_class=FileResponse)
+def prepare_video(
+    service: Service, file: Annotated[UploadFile, File()]
+) -> FileResponse:
+    """Trả MP4 cho bản nháp không phát trực tiếp được; dọn file sau response.
+
+    Tham số:
+        service: Service quản lý storage, không tạo bản ghi thư viện.
+        file: Upload áp dụng giới hạn video và xác minh nội dung bằng FFmpeg.
+    Ngoại lệ:
+        SourceError hoặc OSError: File lỗi, quá dung lượng hoặc không chuyển mã được.
+    Tác động phụ:
+        Tạo file MP4 tạm, xoá qua background task khi gửi xong; luôn đóng upload.
+    """
+    try:
+        path = service.storage.prepare_video(file.file)
+        return FileResponse(
+            path,
+            media_type="video/mp4",
+            headers={"Cache-Control": "no-store"},
+            background=BackgroundTask(path.unlink, missing_ok=True),
+        )
+    finally:
+        file.file.close()
+
+
+# --------------------------- Video phát trên web -----------------------------
+@router.get("/{source_id}/playback", response_class=FileResponse)
+def get_video_playback(source_id: UUID, service: Service) -> FileResponse:
+    """Trả video tương thích trình duyệt, hỗ trợ tua và giữ nguyên file gốc.
+
+    Tham số:
+        source_id: UUID video đã lưu, gồm cả video MOV lưu từ phiên bản trước.
+        service: Service quản lý bản ghi và file nguồn.
+    Ngoại lệ:
+        SourceError: 404 nếu không có video; 415/503 nếu chuyển mã thất bại.
+    Tác động phụ:
+        Tạo MP4 sidecar lần đầu khi video gốc không tương thích.
+    """
+    source, original = service.content(str(source_id))
+    if source.kind != SourceKind.VIDEO:
+        raise SourceError(404, "Source không phải video.")
+    path = service.storage.playback(source.location, source.metadata)
+    return FileResponse(
+        path,
+        media_type=(
+            source.metadata.get("mime_type", "video/mp4")
+            if path == original
+            else "video/mp4"
+        ),
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 # ----------------------------- Danh sách source ------------------------------

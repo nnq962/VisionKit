@@ -13,6 +13,7 @@ export function RunStep({
   modelRecord,
   sourceRecord,
   onComplete,
+  controlsTarget,
 }: {
   source: string;
   model: string;
@@ -21,6 +22,7 @@ export function RunStep({
   modelRecord: StoredModel | null;
   sourceRecord: VisionSource | null;
   onComplete: () => Promise<void>;
+  controlsTarget?: HTMLElement | null;
 }) {
   const classify = modelRecord?.task === "classify";
   const names = modelRecord?.inspection.metadata?.names ?? {};
@@ -53,15 +55,16 @@ export function RunStep({
       : []),
   ];
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <RunWorkspace
         source={sourceRecord}
         model={modelRecord}
         parameters={parameters}
         onComplete={onComplete}
+        controlsTarget={controlsTarget}
       />
-      <details className="group border-t pt-6">
-        <summary className="cursor-pointer text-sm font-semibold">
+      <details className="group border-t pt-3">
+        <summary className="cursor-pointer text-xs font-medium">
           Cấu hình lượt chạy
         </summary>
         <div className="pt-4">

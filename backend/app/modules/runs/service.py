@@ -98,6 +98,10 @@ class RunService:
             filename,
         )
         try:
+            if kind == "video":
+                # Chuẩn bị trước khi AI chạy để trình duyệt không phải đợi chuyển mã
+                # trong khi lượt inference đã tiến tới các frame tiếp theo.
+                await run_in_threadpool(self.storage.playback, location, metadata)
             return await self._enqueue(model_id, options, location, metadata, kind)
         except Exception:
             for path in self.storage.source_paths(location, metadata):
@@ -541,7 +545,17 @@ class RunService:
         self.repository.delete(run_id)
 
     def content(self, run_id: str) -> Path:
-        """Trả ảnh preview phù hợp trình duyệt trong storage riêng của lượt chạy."""
+        """Trả ảnh hoặc video tương thích trình duyệt từ snapshot riêng của lượt chạy.
+
+        Tham số:
+            run_id: ID lượt chạy còn hạn, có snapshot ảnh hoặc video.
+        Trả về:
+            Ảnh preview, video gốc tương thích hoặc MP4 sidecar.
+        Ngoại lệ:
+            SourceError: Snapshot không tồn tại hoặc không chuyển mã được video.
+        Tác động phụ:
+            Tạo và tái dùng MP4 cho MOV; giữ nguyên snapshot dùng cho AI.
+        """
         record = self.get(run_id)
         if record.source_kind in {"stream", "webcam"}:
             raise SourceError(404, "Stream chưa có preview trên trình duyệt.")
@@ -553,6 +567,8 @@ class RunService:
         path = self.storage.path(location)
         if not path.is_file():
             raise SourceError(404, "Ảnh lượt chạy không còn tồn tại.")
+        if record.source_kind == "video":
+            return self.storage.playback(record.source_location, record.source_metadata)
         return path
 
     def cleanup_expired(self) -> None:

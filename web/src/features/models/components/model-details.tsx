@@ -5,14 +5,17 @@ import { formatBytes } from "@/features/sources/media-metadata";
 import { modelTaskLabel } from "../catalog";
 import type { StoredModel } from "../api";
 import type { ModelDraft } from "../model-draft-storage";
+import { DetailDisclosure } from "@/components/detail-disclosure";
 
 export function ModelDetails({
   model,
   draft,
   selection,
+  compact = false,
 }: {
   model: StoredModel | null;
   draft?: ModelDraft;
+  compact?: boolean;
   selection?: Pick<
     ModelSelection,
     "inspecting" | "retryInspection" | "configure"
@@ -59,26 +62,28 @@ export function ModelDetails({
   return (
     <aside
       aria-label="Thông tin model"
-      className="min-w-0 space-y-6 border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+      className={`min-w-0 ${compact ? "space-y-4" : "space-y-6"} border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6`}
     >
       <h3 className="text-sm font-semibold">Thông tin model</h3>
       {title ? (
         <>
           <div className="space-y-2">
-            <p className="break-all text-sm font-medium">{title}</p>
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <p className={`${compact ? "truncate" : "break-all"} text-sm font-medium`} title={title}>{title}</p>
+            {compact && model && <p className="text-xs text-muted-foreground">{modelTaskLabel(model.task)} · {(model.format ?? "pt").toUpperCase()} · {formatBytes(model.sizeBytes)}</p>}
+            {(!compact || file || model?.expiresAt) && <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               {!file && <CheckIcon className="size-3.5" />}
               {file
                 ? "Đang chuẩn bị model"
                 : model?.expiresAt
                   ? "Model tạm · Chưa lưu thư viện"
                   : "Đã lưu trong thư viện"}
-            </p>
+            </p>}
             {model && selection && (
               <ModelMetadataStatus model={model} selection={selection} />
             )}
           </div>
-          <div className="space-y-0">
+          <DetailDisclosure enabled={compact} title="Chi tiết model" open={Boolean(model && ["needs_input", "failed", "unavailable", "manual"].includes(model.inspection.status))}>
+          <div className={`space-y-0 ${compact ? "mt-3 max-h-80 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]" : ""}`}>
             <dl className="divide-y text-sm">
               {details.map(([label, value]) => (
                 <div
@@ -107,6 +112,7 @@ export function ModelDetails({
               />
             ) : null}
           </div>
+          </DetailDisclosure>
         </>
       ) : (
         <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-lg bg-muted/30 text-muted-foreground">

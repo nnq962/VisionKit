@@ -14,9 +14,11 @@ import { usePipelineParameters } from "./use-pipeline-parameters";
 import { validateStep } from "./validation";
 
 const steps = ["Chọn source", "Chọn model", "Thông số", "Chạy"];
+const stepLabels = ["Source", "Model", "Thông số", "Chạy"];
 
 export function YoloPipeline() {
   const [step, setStep] = useState(0);
+  const [runToolbar, setRunToolbar] = useState<HTMLDivElement | null>(null);
   const selection = useSourceSelection();
   const modelSelection = useModelSelection();
   const model = modelSelection.selected;
@@ -55,74 +57,80 @@ export function YoloPipeline() {
     });
   }
 
+  const navigation = (
+    <div role="group" aria-label="Điều hướng các bước" className="flex shrink-0 items-center gap-2">
+      {step > 0 && <Button
+        size="sm"
+        variant="ghost"
+        disabled={
+          selection.saving ||
+          modelSelection.uploading ||
+          modelSelection.saving ||
+          modelSelection.validating
+        }
+        onClick={() => {
+          setStep((current) => current - 1);
+          setError("");
+        }}
+      >
+        <ArrowLeftIcon data-icon="inline-start" />
+        Quay lại
+      </Button>}
+      {step < 3 && (
+        <Button
+          size="sm"
+          onClick={() => void next()}
+          disabled={
+            selection.saving ||
+            modelSelection.uploading ||
+            modelSelection.saving ||
+            modelSelection.validating ||
+            (step === 1 &&
+              ["queued", "processing"].includes(
+                model?.inspection.status ?? "",
+              )) ||
+            !selection.draftsReady ||
+            (step === 0 && selection.source?.status === "loading")
+          }
+        >
+          Tiếp tục
+          <ArrowRightIcon data-icon="inline-end" />
+        </Button>
+      )}
+    </div>
+  );
+
   return (
-    <WorkspacePage
-      title="YOLO pipeline"
-      description="Thiết lập nguồn dữ liệu, model và thông số cho tác vụ nhận diện."
-    >
+    <WorkspacePage title="YOLO pipeline" fill>
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
       <ol
         aria-label="Các bước thiết lập"
-        className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+        className="grid shrink-0 grid-cols-4 gap-2"
       >
         {steps.map((title, index) => (
           <li
             key={title}
             aria-current={step === index ? "step" : undefined}
-            className={`flex items-center gap-2 border-b-2 pb-3 text-sm ${step === index ? "border-primary font-semibold" : "border-border text-muted-foreground"}`}
+            className={`flex min-w-0 flex-col items-center gap-1.5 border-b-2 pb-2 text-xs sm:flex-row sm:gap-2 sm:text-sm ${step === index ? "border-primary font-semibold" : "border-border text-muted-foreground"}`}
           >
             <span
               className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${step === index ? "bg-primary text-primary-foreground" : "bg-muted"}`}
             >
               {step > index ? <CheckIcon className="size-3" /> : index + 1}
             </span>
-            {title}
+            {stepLabels[index]}
           </li>
         ))}
       </ol>
       <WorkspaceSection
         title={steps[step]}
         titleId="step-heading"
-        actions={
-          <>
-            <Button
-              variant="outline"
-              disabled={
-                step === 0 ||
-                selection.saving ||
-                modelSelection.uploading ||
-                modelSelection.saving ||
-                modelSelection.validating
-              }
-              onClick={() => {
-                setStep((current) => current - 1);
-                setError("");
-              }}
-            >
-              <ArrowLeftIcon data-icon="inline-start" />
-              Quay lại
-            </Button>
-            {step < 3 && (
-              <Button
-                onClick={() => void next()}
-                disabled={
-                  selection.saving ||
-                  modelSelection.uploading ||
-                  modelSelection.saving ||
-                  modelSelection.validating ||
-                  (step === 1 &&
-                    ["queued", "processing"].includes(
-                      model?.inspection.status ?? "",
-                    )) ||
-                  !selection.draftsReady ||
-                  (step === 0 && selection.source?.status === "loading")
-                }
-              >
-                Tiếp tục
-                <ArrowRightIcon data-icon="inline-end" />
-              </Button>
-            )}
-          </>
-        }
+        showHeader={false}
+        scrollBody
+        toolbar={<>
+          <div ref={setRunToolbar} className="flex min-w-0 flex-1 flex-wrap items-center gap-2" />
+          {navigation}
+        </>}
       >
         {step === 0 && <SourceStep selection={selection} />}
         {step === 1 && <ModelStep selection={modelSelection} />}
@@ -147,6 +155,7 @@ export function YoloPipeline() {
             modelRecord={model}
             sourceRecord={selection.source}
             onComplete={complete}
+            controlsTarget={runToolbar}
           />
         )}
         {error &&
@@ -157,6 +166,7 @@ export function YoloPipeline() {
             </p>
           )}
       </WorkspaceSection>
+      </div>
     </WorkspacePage>
   );
 }

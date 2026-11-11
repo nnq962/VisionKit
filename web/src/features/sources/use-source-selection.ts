@@ -9,7 +9,7 @@ import { inspectRtspUrl } from "./rtsp-configuration";
 import { checkLocalWebcam } from "./webcam-api";
 import { applyYoutube, createYoutube, deleteYoutube, getYoutube } from "./youtube-api";
 import { readMediaMetadata } from "./media-metadata";
-import { configureRtspSource, deleteSource, inspectImage, renameSource, saveSource } from "./api";
+import { configureRtspSource, deleteSource, inspectImage, prepareVideo, renameSource, saveSource } from "./api";
 import type { SourceKind, VisionSource } from "./types";
 
 export function useSourceSelectionState() {
@@ -125,13 +125,58 @@ export function useSourceSelectionState() {
       }
       return;
     }
-    const previewUrl = URL.createObjectURL(file);
-    urls.current.add(previewUrl);
+    let previewUrl: string | undefined;
     try {
-      const metadata = await readMediaMetadata(previewUrl, kind);
+      let previewBlob: File | undefined;
+      let metadata;
+      // MOV có thể đọc được metadata nhưng vẫn lỗi khi giải mã frame trên web.
+      if (kind === "video" && /\.mov$/i.test(file.name)) {
+        previewBlob = await prepareVideo(file);
+        if (!isCurrent(base)) return;
+        previewUrl = URL.createObjectURL(previewBlob);
+        urls.current.add(previewUrl);
+        metadata = await readMediaMetadata(previewUrl, kind);
+      } else {
+        previewUrl = URL.createObjectURL(file);
+        urls.current.add(previewUrl);
+        try {
+          metadata = await readMediaMetadata(previewUrl, kind);
+        } catch (error) {
+          if (kind !== "video" || !isCurrent(base)) throw error;
+          URL.revokeObjectURL(previewUrl);
+          urls.current.delete(previewUrl);
+          previewBlob = await prepareVideo(file);
+          if (!isCurrent(base)) return;
+          previewUrl = URL.createObjectURL(previewBlob);
+          urls.current.add(previewUrl);
+          metadata = await readMediaMetadata(previewUrl, kind);
+        }
+      }
       if (isCurrent(base))
-        drafts.publish({ ...base, ...metadata, previewUrl, status: "ready" });
+        drafts.publish({
+          ...base,
+          ...metadata,
+          ...(previewBlob ? {
+            file: previewBlob,
+            name: previewBlob.name,
+            location: previewBlob.name,
+            size: previewBlob.size,
+            format: "MP4",
+            mimeType: "video/mp4",
+          } : {}),
+          previewUrl,
+          previewBlob,
+          status: "ready",
+        });
+      else {
+        URL.revokeObjectURL(previewUrl);
+        urls.current.delete(previewUrl);
+      }
     } catch (error) {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        urls.current.delete(previewUrl);
+      }
       if (isCurrent(base))
         drafts.publish({
           ...base,

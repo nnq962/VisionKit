@@ -16,13 +16,15 @@ export function SourceStep({ selection }: { selection: SourceSelection }) {
       </p>
     );
   return (
-    <div className="space-y-6">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-4">
       <div
         className="flex flex-wrap gap-2"
         role="group"
         aria-label="Cách chọn source"
       >
         <Button
+          size="sm"
           variant={mode === "new" ? "secondary" : "ghost"}
           aria-pressed={mode === "new"}
           disabled={selection.saving}
@@ -37,6 +39,7 @@ export function SourceStep({ selection }: { selection: SourceSelection }) {
           )}
         </Button>
         <Button
+          size="sm"
           variant={mode === "saved" ? "secondary" : "ghost"}
           aria-pressed={mode === "saved"}
           disabled={selection.saving}
@@ -46,12 +49,11 @@ export function SourceStep({ selection }: { selection: SourceSelection }) {
           Đã lưu ({selection.libraryTotal})
         </Button>
       </div>
-      <SourceDraftNotice
+      {mode === "new" && <SourceDraftNotice
         key={`${mode}-${selection.kind}`}
         selection={selection}
-      />
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <div className="min-w-0 space-y-6">
+      />}
+        <div className="space-y-6">
           {mode === "new" ? (
             <NewSourceForm selection={selection} />
           ) : (
@@ -69,11 +71,14 @@ export function SourceStep({ selection }: { selection: SourceSelection }) {
             </p>
           )}
         </div>
+      </div>
         <div
+          className="min-w-0 lg:sticky lg:top-24"
           aria-live="polite"
           aria-busy={selection.source?.status === "loading"}
         >
           <SourceDetails
+            compact
             source={selection.source}
             emptyKind={selection.kind}
             onOpenCamera={
@@ -81,7 +86,6 @@ export function SourceStep({ selection }: { selection: SourceSelection }) {
             }
           />
         </div>
-      </div>
     </div>
   );
 }

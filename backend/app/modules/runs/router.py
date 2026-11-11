@@ -16,6 +16,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, Response
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from app.core.errors import SourceError
 
@@ -152,6 +153,11 @@ async def create_run(
     source, path = sources.content(str(source_id))
     if source.kind.value not in {"image", "screen", "video"}:
         raise SourceError(422, "Hiện hỗ trợ inference ảnh, ảnh màn hình và video file.")
+    if source.kind.value == "video":
+        # MOV thư viện cũ dùng lại bản MP4 đã cache, không chuyển mã lại mỗi run.
+        path = await run_in_threadpool(
+            sources.storage.playback, source.location, source.metadata
+        )
     with path.open("rb") as stream:
         return await service.create(
             model_id,
