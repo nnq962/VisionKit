@@ -10,14 +10,19 @@ import type { SourceSelection } from "../use-source-selection";
 export function SavedSourceActions({
   source,
   selection,
+  initialMode = "view",
+  onDone,
 }: {
   source: VisionSource;
-  selection: Pick<SourceSelection, "saving" | "rename" | "remove" | "configureRtsp">;
+  selection: Pick<SourceSelection, "saving" | "rename" | "remove" | "configureRtsp"> & Partial<Pick<SourceSelection, "saveError">>;
+  initialMode?: "view" | "rename" | "delete" | "configure";
+  onDone?: () => void;
 }) {
-  const [mode, setMode] = useState<"view" | "rename" | "delete" | "configure">("view");
+  const [mode, setMode] = useState(initialMode);
   const [name, setName] = useState(source.name);
+  function close() { setMode("view"); onDone?.(); }
   return (
-    <div className="space-y-4 pt-4 pb-5 text-left">
+    <div className={onDone ? "space-y-4 text-left" : "space-y-4 pt-4 pb-5 text-left"}>
       {mode === "view" ? (
         <div className="flex flex-wrap gap-2">
           {source.kind === "stream" && <Button variant="ghost" size="sm" disabled={selection.saving} onClick={() => setMode("configure")}>
@@ -48,10 +53,10 @@ export function SavedSourceActions({
       ) : mode === "configure" ? (
         <RtspCameraForm
           initialName={source.name} currentLocation={source.location} busy={selection.saving}
-          onCancel={() => setMode("view")}
+          onCancel={close}
           onSave={async (nextName, url) => {
             const ok = await selection.configureRtsp(nextName, url, source.id);
-            if (ok) setMode("view");
+            if (ok) close();
             return ok;
           }}
         />
@@ -60,7 +65,7 @@ export function SavedSourceActions({
           className="space-y-4"
           onSubmit={async (event) => {
             event.preventDefault();
-            if (await selection.rename(source.id, name.trim())) setMode("view");
+            if (await selection.rename(source.id, name.trim())) close();
           }}
         >
           <div className="space-y-2">
@@ -82,7 +87,7 @@ export function SavedSourceActions({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setMode("view")}
+              onClick={close}
               disabled={selection.saving}
             >
               Huỷ
@@ -100,7 +105,7 @@ export function SavedSourceActions({
               size="sm"
               disabled={selection.saving}
               onClick={async () => {
-                if (await selection.remove(source.id)) setMode("view");
+                if (await selection.remove(source.id)) close();
               }}
             >
               Xác nhận xoá
@@ -108,7 +113,7 @@ export function SavedSourceActions({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setMode("view")}
+              onClick={close}
               disabled={selection.saving}
             >
               Huỷ
@@ -116,6 +121,7 @@ export function SavedSourceActions({
           </div>
         </div>
       )}
+      {mode !== "view" && selection.saveError && <p role="alert" className="text-sm text-destructive">{selection.saveError}</p>}
     </div>
   );
 }

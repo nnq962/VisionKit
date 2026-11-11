@@ -16,27 +16,32 @@ export function OverlayControls({
   classify: boolean;
 }) {
   const rows: [keyof OverlayPreferences, string, boolean][] = [
-    ["boxes", "Bounding box", classify],
-    ["segments", "Segmentation", !segment],
-    ["labels", "Tên class / confidence", classify || !preferences.boxes],
+    ["boxes", "Khung nhận diện", classify],
+    ["segments", "Vùng phân đoạn", !segment],
+    ["labels", "Tên và độ tin cậy", classify || !preferences.boxes],
     ["keypoints", "Điểm khớp", !pose],
     ["skeleton", "Đường nối khớp", !pose || !canConnect],
   ];
+  const visibleRows = rows.filter(([key]) => {
+    if (key === "boxes" || key === "labels") return !classify;
+    if (key === "segments") return segment;
+    return pose;
+  });
   return (
-    <section className="space-y-4" aria-labelledby="overlay-heading">
+    <section className="space-y-2" aria-labelledby="overlay-heading">
       <h3 id="overlay-heading" className="text-sm font-semibold">
         Hiển thị
       </h3>
       <div className="divide-y">
-        {rows.map(([key, label, disabled]) => (
+        {visibleRows.map(([key, label, disabled]) => (
           <label
             key={key}
-            className={`flex items-center justify-between gap-4 py-3 first:pt-0 ${disabled ? "text-muted-foreground" : "cursor-pointer"}`}
+            className={`flex items-center justify-between gap-3 py-2 ${disabled ? "text-muted-foreground" : "cursor-pointer"}`}
           >
-            <span className="text-sm">{label}</span>
+            <span className="text-xs leading-5">{label}</span>
             <input
               type="checkbox"
-              className="size-4 shrink-0 accent-primary"
+              className="size-3.5 shrink-0 accent-primary"
               checked={!disabled && preferences[key]}
               disabled={disabled}
               onChange={(event) =>

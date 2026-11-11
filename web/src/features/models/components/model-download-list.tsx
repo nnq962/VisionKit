@@ -24,8 +24,8 @@ export function ModelDownloadList({
 }) {
   if (!jobs.length)
     return (
-      <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-        <DownloadIcon className="size-8" strokeWidth={1.5} />
+      <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+        <DownloadIcon className="size-7" strokeWidth={1.5} />
         <p className="text-sm">Chưa có lượt tải</p>
       </div>
     );
@@ -34,13 +34,13 @@ export function ModelDownloadList({
       {jobs.map((job) => {
         const active = ["queued", "downloading"].includes(job.status);
         return (
-          <li key={job.jobId} className="space-y-3 py-5 first:pt-0 last:pb-0">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0 space-y-1">
-                <p className="break-all text-sm font-medium">
+          <li key={job.jobId} className="space-y-2 py-3 first:pt-0 last:pb-0">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="truncate text-sm font-medium" title={job.variant.filename}>
                   {job.variant.filename}
                 </p>
-                <p className="text-xs tabular-nums text-muted-foreground">
+                <p className="truncate text-xs tabular-nums text-muted-foreground">
                   {labels[job.status]} · {formatBytes(job.received)} /{" "}
                   {formatBytes(job.total)}
                   {active ? ` · ${job.progress}%` : ""}

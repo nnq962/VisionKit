@@ -1,4 +1,6 @@
 "use client";
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import { CheckIcon, DownloadIcon, PlayIcon, SquareIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OverlayControls } from "./overlay-controls";
@@ -20,12 +22,15 @@ function RunWorkspaceContent({
   model,
   parameters,
   onComplete,
+  controlsTarget,
 }: {
   source: VisionSource | null;
   model: StoredModel | null;
   parameters: YoloParameters;
   onComplete: () => Promise<void>;
+  controlsTarget?: HTMLElement | null;
 }) {
+  const [captureToolbar, setCaptureToolbar] = useState<HTMLDivElement | null>(null);
   const inference = useInferenceRun(source, model?.id ?? null, parameters);
   const { run } = inference;
   const { preferences, update: updateOverlay } = useOverlayPreferences();
@@ -89,45 +94,49 @@ function RunWorkspaceContent({
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  const controls = (
+    <>
+      {inference.active ? (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={inference.stopping}
+          onClick={() => void inference.stop()}
+        >
+          <SquareIcon />
+          {live ? "Dừng AI" : "Dừng"}
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          disabled={!supported || !model || inference.starting || inference.finishing}
+          variant={run ? "outline" : "default"}
+          onClick={() => void inference.start()}
+        >
+          <PlayIcon />
+          {run ? "Chạy lại" : "Chạy pipeline"}
+        </Button>
+      )}
+      {run && !inference.active && (
+        <Button size="sm" title="Dọn dữ liệu tạm và quay lại bước 1" disabled={inference.finishing || inference.starting} onClick={() => void inference.finish(onComplete)}>
+          <CheckIcon />{inference.finishing ? "Đang dọn dẹp…" : "Hoàn thành"}
+        </Button>
+      )}
+      <div ref={setCaptureToolbar} className="contents" />
+      {result && (
+        <Button size="sm" variant="outline" disabled={inference.finishing} onClick={download}>
+          <DownloadIcon />
+          {temporal ? "JSON frame cuối" : "JSON"}
+        </Button>
+      )}
+      <span role="status" className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground" title={status}><span className={`size-1.5 shrink-0 rounded-full ${inference.active ? "bg-emerald-500" : "bg-muted-foreground/50"}`} /><span className="truncate">{status}</span></span>
+    </>
+  );
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p role="status" className="text-sm text-muted-foreground">
-          {status}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {inference.active ? (
-            <Button
-              variant="outline"
-              disabled={inference.stopping}
-              onClick={() => void inference.stop()}
-            >
-              <SquareIcon />
-              {live ? "Dừng AI" : "Dừng"}
-            </Button>
-          ) : (
-            <Button
-              disabled={!supported || !model || inference.starting || inference.finishing}
-              variant={run ? "outline" : "default"}
-              onClick={() => void inference.start()}
-            >
-              <PlayIcon />
-              {run ? "Chạy lại" : "Chạy pipeline"}
-            </Button>
-          )}
-          {run && !inference.active && (
-            <Button title="Dọn dữ liệu tạm và quay lại bước 1" disabled={inference.finishing || inference.starting} onClick={() => void inference.finish(onComplete)}>
-              <CheckIcon />{inference.finishing ? "Đang dọn dẹp…" : "Hoàn thành"}
-            </Button>
-          )}
-          {result && (
-            <Button variant="outline" disabled={inference.finishing} onClick={download}>
-              <DownloadIcon />
-              {temporal ? "JSON frame cuối" : "JSON"}
-            </Button>
-          )}
-        </div>
-      </div>
+    <div className="space-y-4">
+      {controlsTarget ? createPortal(controls, controlsTarget) : controlsTarget === undefined ? (
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Điều khiển pipeline">{controls}</div>
+      ) : null}
       {!supported && (
         <p className="text-sm text-muted-foreground">
           Nguồn này chưa hỗ trợ chạy AI. Chọn ảnh, video file hoặc camera RTSP.
@@ -172,9 +181,13 @@ function RunWorkspaceContent({
           )}
         </div>
       )}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_15rem]">
         <div className="min-w-0 space-y-3">
-          <ResultCapture key={run?.id ?? source?.id} name={source?.name ?? "ket-qua"} temporal={temporal}>
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="min-w-0 truncate font-medium text-foreground" title={source?.name}>{source?.name}</span>
+            <span className="min-w-0 truncate" title={model?.name ?? model?.filename}>{model?.name ?? model?.filename}</span>
+          </div>
+          <ResultCapture key={run?.id ?? source?.id} name={source?.name ?? "ket-qua"} temporal={temporal} controlsTarget={captureToolbar}>
             {webcam ? (
               <WebcamRunPreview key={source?.id} src={src ?? ""} name={`Webcam ${source?.deviceIndex ?? 0} trên máy AI`} result={result} options={overlayOptions} active={inference.active} />
             ) : live && source ? (
@@ -212,7 +225,7 @@ function RunWorkspaceContent({
         </div>
         <aside
           aria-label="Tuỳ chọn hiển thị"
-          className="min-w-0 space-y-4 border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+          className="min-w-0 space-y-4 rounded-lg border bg-muted/10 p-4"
         >
           <OverlayControls
             preferences={preferences}

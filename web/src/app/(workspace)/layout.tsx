@@ -27,7 +27,7 @@ export default function WorkspaceLayout({
               tabIndex={-1}
               className="min-h-0 flex-1 overflow-y-auto p-4 [scrollbar-width:none] [-ms-overflow-style:none] md:p-8 [&::-webkit-scrollbar]:hidden"
             >
-              <div className="mx-auto w-full max-w-6xl">{children}</div>
+              <div className="mx-auto h-full w-full max-w-6xl">{children}</div>
             </div>
           </SidebarInset>
         </SidebarProvider>
