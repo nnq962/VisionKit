@@ -4,10 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { listSources } from "./api";
 import type { SourceKind, VisionSource } from "./types";
 
-export function useSourceLibrary() {
-  const [library, setLibrary] = useState<VisionSource[]>([]);
-  const [libraryTotal, setLibraryTotal] = useState(0);
-  const [libraryLoading, setLibraryLoading] = useState(true);
+export function useSourceLibrary(initial?: {
+  items: VisionSource[];
+  total: number;
+}) {
+  const [library, setLibrary] = useState<VisionSource[]>(initial?.items ?? []);
+  const [libraryTotal, setLibraryTotal] = useState(initial?.total ?? 0);
+  const [libraryLoading, setLibraryLoading] = useState(!initial);
   const [libraryError, setLibraryError] = useState("");
   const libraryVersion = useRef(0);
   const [filters, setFilters] = useState<{ kind?: SourceKind; q?: string }>({});
@@ -38,7 +41,11 @@ export function useSourceLibrary() {
     setLibraryLoading(true);
     setLibraryError("");
     try {
-      const page = await listSources(loadMore ? library.length : 0, undefined, filters);
+      const page = await listSources(
+        loadMore ? library.length : 0,
+        undefined,
+        filters,
+      );
       if (version !== libraryVersion.current) return;
       setLibrary((items) =>
         loadMore

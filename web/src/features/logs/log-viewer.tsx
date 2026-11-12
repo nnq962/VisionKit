@@ -62,7 +62,7 @@ export function LogViewer() {
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0 @sm:flex-nowrap @sm:gap-x-3">
                   <time dateTime={entry.timestamp} title={new Date(entry.timestamp).toLocaleString("vi-VN")} className="shrink-0 text-slate-500">{new Date(entry.timestamp).toLocaleTimeString("vi-VN", { hour12: false })}</time>
                   <span className={`w-14 shrink-0 text-[10px] font-semibold ${LEVEL_STYLE[entry.level]}`}>{entry.level === "WARNING" ? "WARN" : entry.level}</span>
-                  <span className={`w-13 shrink-0 text-[10px] ${entry.service === "ai" ? "text-violet-300" : "text-slate-400"}`}>{entry.service === "ai" ? "ai" : "backend"}</span>
+                  <span className={`w-13 shrink-0 text-[10px] ${entry.service === "ai" ? "text-lime-300" : "text-slate-400"}`}>{entry.service === "ai" ? "ai" : "backend"}</span>
                   <span title={[entry.logger, entry.run_id && `Run: ${entry.run_id}`].filter(Boolean).join(" · ")} className={`min-w-0 basis-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] @sm:basis-auto ${(entry.level === "ERROR" || entry.level === "CRITICAL") ? "text-rose-200" : ""}`}>{entry.message}</span>
                 </div>
                 {entry.traceback && <details className="mt-1 @sm:ml-[214px]">
@@ -163,7 +163,7 @@ export function LogViewer() {
             <span title="Giữ tối đa 2.000 dòng gần nhất">{filtered.length} dòng</span>
             <span className="hidden @sm:inline" title={ai?.last_success_at ? `Lần thu AI gần nhất: ${new Date(ai.last_success_at).toLocaleString("vi-VN")}` : undefined}>AI: {!ai ? "Đang kiểm tra" : !ai.configured ? "Chưa cấu hình" : ai.available === null ? "Đang kiểm tra" : ai.available ? "Đã kết nối" : "Mất kết nối"}</span>
             {(errors > 0 || warnings > 0) && <span className="hidden items-center gap-2 @sm:flex">{errors > 0 && <span className="flex items-center gap-1 text-destructive"><CircleAlertIcon className="size-3" />{errors} lỗi</span>}{warnings > 0 && <span className="text-warning">{warnings} cảnh báo</span>}</span>}
-            <button type="button" aria-pressed={following} onClick={() => setFollowing(!following)} className={`ml-auto flex items-center gap-1.5 rounded py-1 font-medium focus-visible:outline-2 focus-visible:outline-ring ${following ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>{following ? <CheckIcon className="size-3" /> : <ArrowDownToLineIcon className="size-3" />}Theo dõi cuối</button>
+            <button type="button" aria-pressed={following} onClick={() => setFollowing(!following)} className={`ml-auto flex items-center gap-1.5 rounded py-1 font-medium focus-visible:outline-2 focus-visible:outline-ring ${following ? "text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>{following ? <CheckIcon className="size-3" /> : <ArrowDownToLineIcon className="size-3" />}Theo dõi cuối</button>
           </div>
           <span id="log-resize-hint" className="sr-only">Kéo cạnh hoặc góc để đổi kích thước. Tại góc dưới phải, dùng phím mũi tên; giữ Shift để thay đổi nhanh hơn.</span>
           {RESIZE_HANDLES.map(({ direction, label, className }) => (

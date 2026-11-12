@@ -50,13 +50,11 @@ export function ModelCatalogRow({
       : undefined;
   const installed = saved.some((item) => item.id === variant.id);
   return (
-    <li className="py-6 first:pt-0 last:pb-0">
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] xl:gap-8">
-        <div className="min-w-0 space-y-2">
+    <li className="py-5 first:pt-0 last:pb-0">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_28rem] lg:items-center lg:gap-6">
+        <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-semibold tracking-tight">
-              {family.name}
-            </h3>
+            <h3 className="text-sm font-semibold">{family.name}</h3>
             {family.openVocabulary && (
               <span className="rounded-md bg-accent px-2 py-0.5 text-xs text-accent-foreground">
                 Open vocabulary
@@ -72,22 +70,22 @@ export function ModelCatalogRow({
               <ArrowUpRightIcon className="size-4" />
             </a>
           </div>
-          <p className="text-sm leading-6 text-muted-foreground">
+          <p
+            className="truncate text-xs text-muted-foreground"
+            title={family.description}
+          >
             {family.description}
           </p>
-          <p className="text-xs text-muted-foreground">
-            Ultralytics · PyTorch .pt
-          </p>
         </div>
-        <div className="min-w-0 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 lg:w-full">
+          <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1">
             <Select
               value={selectedTask}
               onValueChange={(value) => setTask(value as ModelTask)}
               disabled={taskFilter !== "all"}
             >
               <SelectTrigger
-                className="w-40"
+                className="data-[size=default]:h-9 w-32 sm:w-36"
                 aria-label={`Tác vụ ${family.name}`}
               >
                 <SelectValue />
@@ -103,7 +101,7 @@ export function ModelCatalogRow({
               </SelectContent>
             </Select>
             <div
-              className="flex gap-1"
+              className="flex gap-0.5 rounded-lg bg-muted/60 p-1"
               role="group"
               aria-label={`Kích cỡ ${family.name}`}
             >
@@ -111,13 +109,13 @@ export function ModelCatalogRow({
                 <Button
                   key={item}
                   size="icon-sm"
-                  variant={item === size ? "secondary" : "ghost"}
+                  variant={item === size ? "outline" : "ghost"}
                   aria-pressed={item === size}
                   aria-label={`${family.name} ${sizeLabels[item]}`}
                   title={sizeLabels[item]}
                   onClick={() => setSize(item)}
                   className={
-                    item === size ? "text-primary" : "text-muted-foreground"
+                    item === size ? "text-accent-foreground" : "text-muted-foreground"
                   }
                 >
                   {item.toUpperCase()}
@@ -125,10 +123,7 @@ export function ModelCatalogRow({
               ))}
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="min-w-0 break-all text-xs text-muted-foreground">
-              {variant.filename}
-            </span>
+          <div className="col-start-2 row-start-2 sm:row-span-2 sm:row-start-1 sm:self-start">
             {job ? (
               <div className="flex items-center gap-2">
                 <span
@@ -152,7 +147,8 @@ export function ModelCatalogRow({
             ) : (
               <Button
                 variant={installed ? "secondary" : "outline"}
-                size="sm"
+                size="lg"
+                className="min-w-26"
                 disabled={installed || !ready || busy.includes(variant.id)}
                 onClick={() => onDownload(variant)}
                 aria-label={`${installed ? "Đã lưu" : "Tải"} ${variant.filename}`}
@@ -168,8 +164,16 @@ export function ModelCatalogRow({
               </Button>
             )}
           </div>
+          <span
+            className="col-start-1 row-start-2 min-w-0 truncate text-xs text-muted-foreground"
+            title={variant.filename}
+          >
+            {variant.filename}
+          </span>
           {!job && latest?.status === "failed" && (
-            <p className="text-xs text-destructive">{latest.error}</p>
+            <p className="col-span-2 text-xs text-destructive">
+              {latest.error}
+            </p>
           )}
           {job && (
             <div
@@ -178,7 +182,7 @@ export function ModelCatalogRow({
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={job.progress}
-              className="h-1 overflow-hidden rounded bg-muted"
+              className="col-span-2 h-1 overflow-hidden rounded bg-muted"
             >
               <div
                 className="h-full bg-primary transition-[width] duration-200 motion-reduce:transition-none"

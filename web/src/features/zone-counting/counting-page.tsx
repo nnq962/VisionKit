@@ -668,7 +668,7 @@ export function CountingPage({
                         refresh: () => setRevision((value) => value + 1),
                         update: ({ selectedId }) => {
                           setNewTouched(true);
-                          setModelId(selectedId);
+                          setModelId(selectedId ?? "");
                         },
                       }}
                     />

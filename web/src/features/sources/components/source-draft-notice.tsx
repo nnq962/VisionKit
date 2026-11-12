@@ -16,13 +16,13 @@ export function SourceDraftNotice({
       selection.location.trim());
   return (
     <div
-      className="flex flex-col gap-3 rounded-lg bg-muted p-4 sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground"
       role="status"
     >
-      <div className="flex min-w-0 gap-3">
+      <div className="flex min-w-0 gap-2">
         <FileClockIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 space-y-1">
-          <p className="text-sm font-medium">
+          <p className="text-xs">
             {active ? "Bản nháp chưa lưu" : `${selection.draftCount} bản nháp`}
           </p>
           {selection.storageStatus === "error" && (

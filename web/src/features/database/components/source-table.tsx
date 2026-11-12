@@ -20,11 +20,7 @@ export function SourceTable({
 }) {
   if (loading)
     return (
-      <div
-        role="status"
-        aria-label="Đang tải source"
-        className="space-y-4 py-4"
-      >
+      <div role="status" aria-label="Đang tải nguồn" className="space-y-4 py-4">
         {[0, 1, 2].map((i) => (
           <Skeleton key={i} className="h-16 w-full" />
         ))}
@@ -38,11 +34,11 @@ export function SourceTable({
           strokeWidth={1.5}
         />
         <p className="text-sm font-medium">
-          {filtered ? "Không tìm thấy source" : "Chưa có source"}
+          {filtered ? "Không tìm thấy nguồn" : "Chưa có nguồn"}
         </p>
         {!filtered && (
           <Button variant="outline" onClick={onAdd}>
-            Thêm source
+            Thêm nguồn
           </Button>
         )}
       </div>
@@ -53,13 +49,13 @@ export function SourceTable({
         className="hidden grid-cols-[minmax(0,1fr)_7rem_7rem_6rem_1rem] gap-4 border-b px-3 pb-3 text-xs text-muted-foreground md:grid"
         aria-hidden="true"
       >
-        <span>Source</span>
+        <span>Nguồn</span>
         <span>Loại</span>
         <span>Dung lượng</span>
         <span>Ngày thêm</span>
         <span />
       </div>
-      <ul className="divide-y" aria-label="Danh sách source">
+      <ul className="divide-y" aria-label="Danh sách nguồn">
         {items.map((source) => (
           <li key={source.id}>
             <button
@@ -69,20 +65,27 @@ export function SourceTable({
               <span className="flex min-w-0 flex-1 items-center gap-3">
                 <SourceThumbnail source={source} />
                 <span className="min-w-0 space-y-1">
-                  <span className="block truncate text-sm font-medium">
+                  <span
+                    className="block truncate text-sm font-medium"
+                    title={source.name}
+                  >
                     {source.name}
                   </span>
-                  <span className="block text-xs text-muted-foreground">
+                  <span
+                    className={`block text-xs text-muted-foreground ${source.width && source.height ? "" : "md:hidden"}`}
+                  >
                     {source.width && source.height
                       ? `${source.width} × ${source.height}`
                       : sourceLabel(source.kind)}
                     {source.kind === "video" && source.duration
                       ? ` · ${formatDuration(source.duration)}`
                       : ""}
-                    <span className="md:hidden">
-                      {" "}
-                      · {formatBytes(source.size)}
-                    </span>
+                    {source.size !== undefined && (
+                      <span className="md:hidden">
+                        {" "}
+                        · {formatBytes(source.size)}
+                      </span>
+                    )}
                   </span>
                 </span>
               </span>

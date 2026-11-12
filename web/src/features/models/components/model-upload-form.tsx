@@ -36,7 +36,7 @@ export function ModelUploadForm({ selection }: { selection: ModelSelection }) {
             setDragging(false);
             choose(event.dataTransfer.files);
           }}
-          className={`rounded-lg border p-4 ${dragging ? "border-primary bg-accent" : "border-input bg-muted/20"} ${selection.file ? "" : "border-dashed"}`}
+          className={`rounded-lg border p-4 ${dragging ? "border-ring bg-accent" : "border-input bg-muted/20"} ${selection.file ? "" : "border-dashed"}`}
         >
           {selection.file ? (
             <div className="flex items-start gap-3">

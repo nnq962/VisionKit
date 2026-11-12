@@ -1,5 +1,6 @@
 import { XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { WorkspaceSection } from "@/components/workspace-page";
 import { NewSourceForm } from "@/features/sources/components/new-source-form";
 import { SourceDetails } from "@/features/sources/components/source-details";
 import { SourceDraftNotice } from "@/features/sources/components/source-draft-notice";
@@ -14,26 +15,23 @@ export function SourceUploadPanel({
   onClose: () => void;
 }) {
   return (
-    <section className="rounded-xl border" aria-labelledby="upload-heading">
-      <div className="flex items-center justify-between border-b p-4 md:p-6">
-        <h2
-          id="upload-heading"
-          tabIndex={-1}
-          className="text-lg font-semibold outline-none"
-        >
-          Thêm source
-        </h2>
+    <WorkspaceSection
+      title="Thêm nguồn"
+      titleId="upload-heading"
+      variant="plain"
+      actions={
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon-lg"
           disabled={selection.saving}
           onClick={onClose}
-          aria-label="Đóng thêm source"
+          aria-label="Đóng thêm nguồn"
         >
           <XIcon />
         </Button>
-      </div>
-      <div className="space-y-6 p-4 md:p-6">
+      }
+    >
+      <div className="space-y-6 pb-6">
         <SourceDraftNotice selection={selection} />
         {selection.draftsReady ? (
           <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
@@ -42,19 +40,27 @@ export function SourceUploadPanel({
                 selection={selection}
                 allowedKinds={["image", "video", "stream"]}
               />
-              <SourceSaveForm selection={selection} />
-              {selection.saveError && (
+              {selection.kind === "stream" && selection.saveError && (
                 <p role="alert" className="text-sm text-destructive">
                   {selection.saveError}
                 </p>
               )}
-              {selection.notice && (
+              {selection.kind === "stream" && selection.notice && (
                 <p role="status" className="text-sm text-success">
                   {selection.notice}
                 </p>
               )}
             </div>
-            <SourceDetails source={selection.source} emptyKind={selection.kind} />
+            <SourceDetails
+              compact
+              source={selection.source}
+              emptyKind={selection.kind}
+              footer={
+                selection.kind !== "stream" ? (
+                  <SourceSaveForm selection={selection} />
+                ) : undefined
+              }
+            />
           </div>
         ) : (
           <p role="status" className="text-sm text-muted-foreground">
@@ -62,6 +68,6 @@ export function SourceUploadPanel({
           </p>
         )}
       </div>
-    </section>
+    </WorkspaceSection>
   );
 }

@@ -54,8 +54,10 @@ export function SourceDatabase() {
         />
       )}
       <WorkspaceSection
-        title="Thư viện source"
+        title="Thư viện nguồn"
         titleId="source-library-heading"
+        variant="plain"
+        showHeader={false}
         footer={
           <>
             <p
@@ -63,13 +65,13 @@ export function SourceDatabase() {
               className="text-xs text-muted-foreground tabular-nums"
             >
               {catalog.total
-                ? `${catalog.page * catalog.limit + 1}–${Math.min((catalog.page + 1) * catalog.limit, catalog.total)} / ${catalog.total} source`
-                : "0 source"}
+                ? `${catalog.page * catalog.limit + 1}–${Math.min((catalog.page + 1) * catalog.limit, catalog.total)} / ${catalog.total} nguồn`
+                : "0 nguồn"}
             </p>
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                size="icon-sm"
+                size="icon-lg"
                 aria-label="Trang trước"
                 disabled={catalog.page === 0 || catalog.loading}
                 onClick={() => catalog.setPage(catalog.page - 1)}
@@ -78,7 +80,7 @@ export function SourceDatabase() {
               </Button>
               <Button
                 variant="outline"
-                size="icon-sm"
+                size="icon-lg"
                 aria-label="Trang sau"
                 disabled={
                   (catalog.page + 1) * catalog.limit >= catalog.total ||
@@ -95,24 +97,27 @@ export function SourceDatabase() {
         <div className="space-y-6">
           <div className="flex flex-col gap-3 sm:flex-row">
             <div className="relative min-w-0 flex-1">
-              <SearchIcon className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
+              <SearchIcon className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
-                aria-label="Tìm source"
-                placeholder="Tìm theo tên…"
-                className="pl-9"
+                aria-label="Tìm nguồn"
+                placeholder="Tìm nguồn…"
+                className="h-9 pl-9"
                 value={catalog.search}
                 maxLength={120}
                 onChange={(event) => catalog.setSearch(event.target.value)}
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex min-w-0 gap-2">
               <Select
                 value={catalog.kind}
                 onValueChange={(value) =>
                   catalog.setKind(value as SourceKind | "all")
                 }
               >
-                <SelectTrigger className="w-36" aria-label="Lọc loại source">
+                <SelectTrigger
+                  className="data-[size=default]:h-9 min-w-0 flex-1 sm:w-36 sm:flex-none"
+                  aria-label="Lọc loại nguồn"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -126,8 +131,8 @@ export function SourceDatabase() {
                 </SelectContent>
               </Select>
               <Button
-                variant="outline"
-                size="icon"
+                variant="ghost"
+                size="icon-lg"
                 aria-label="Làm mới thư viện"
                 disabled={catalog.loading}
                 onClick={() => {
@@ -144,11 +149,14 @@ export function SourceDatabase() {
                 />
               </Button>
               <Button
+                size="lg"
                 onClick={openUpload}
-                disabled={selection.saving || !selection.draftsReady}
+                disabled={
+                  uploadOpen || selection.saving || !selection.draftsReady
+                }
               >
                 <PlusIcon />
-                Thêm source
+                Thêm nguồn
               </Button>
             </div>
           </div>
@@ -199,7 +207,10 @@ export function SourceDatabase() {
               }
               setActionError("");
               setRevision((value) => value + 1);
-            } else setActionError("Không lưu được cấu hình camera. Kiểm tra kết nối rồi thử lại.");
+            } else
+              setActionError(
+                "Không lưu được cấu hình camera. Kiểm tra kết nối rồi thử lại.",
+              );
             return ok;
           },
           remove: async (id) => {
@@ -207,7 +218,7 @@ export function SourceDatabase() {
             if (ok) {
               setDetail(null);
               setRevision((value) => value + 1);
-            } else setActionError("Không xoá được source. Thử lại.");
+            } else setActionError("Không xoá được nguồn. Thử lại.");
             return ok;
           },
         }}

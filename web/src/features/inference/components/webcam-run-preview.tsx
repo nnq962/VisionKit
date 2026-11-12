@@ -114,9 +114,6 @@ export function WebcamRunPreview({
   return (
     <div className="space-y-3">
       <canvas ref={canvas} data-capture-media role="img" aria-label={name} className="block aspect-video w-full rounded-lg bg-muted" />
-      <p className="text-xs text-muted-foreground">
-        Hình từ đúng frame AI đang xử lý; preview theo nhịp AI. Webcam chỉ dành cho trình duyệt chạy cùng máy với server.
-      </p>
     </div>
   );
 }

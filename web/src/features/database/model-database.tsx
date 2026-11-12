@@ -45,6 +45,8 @@ export function ModelDatabase() {
       <WorkspaceSection
         title="Thư viện model"
         titleId="model-library-heading"
+        variant="plain"
+        showHeader={false}
         footer={
           <>
             <p
@@ -67,11 +69,11 @@ export function ModelDatabase() {
         <div className="space-y-6">
           <div className="flex flex-col gap-3 sm:flex-row">
             <div className="relative min-w-0 flex-1">
-              <SearchIcon className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
+              <SearchIcon className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 aria-label="Tìm model"
                 placeholder="Tìm theo tên, dòng model…"
-                className="pl-9"
+                className="h-9 pl-9"
                 value={search}
                 maxLength={120}
                 onChange={(event) => {
@@ -89,7 +91,7 @@ export function ModelDatabase() {
                 }}
               >
                 <SelectTrigger
-                  className="min-w-0 flex-1 sm:w-36 sm:flex-none"
+                  className="data-[size=default]:h-9 min-w-0 flex-1 sm:w-40 sm:flex-none"
                   aria-label="Lọc định dạng model"
                 >
                   <SelectValue />
@@ -103,8 +105,8 @@ export function ModelDatabase() {
                 </SelectContent>
               </Select>
               <Button
-                variant="outline"
-                size="icon"
+                variant="ghost"
+                size="icon-lg"
                 aria-label="Làm mới model"
                 disabled={catalog.loading}
                 onClick={catalog.refresh}
@@ -117,7 +119,7 @@ export function ModelDatabase() {
                   }
                 />
               </Button>
-              <Button variant="outline" asChild>
+              <Button size="lg" variant="outline" asChild>
                 <Link href="/models">
                   Model Hub
                   <ArrowUpRightIcon />

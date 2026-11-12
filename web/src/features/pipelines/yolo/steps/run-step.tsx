@@ -1,4 +1,8 @@
-import { RunWorkspace } from "@/features/inference/components/run-workspace";
+import type { Ref } from "react";
+import {
+  RunWorkspace,
+  type RunNavigation,
+} from "@/features/inference/components/run-workspace";
 import type { VisionSource } from "@/features/sources/types";
 import type { StoredModel } from "@/features/models/api";
 import type { SourceKind } from "@/features/sources/types";
@@ -13,6 +17,11 @@ export function RunStep({
   modelRecord,
   sourceRecord,
   onComplete,
+  controlsTarget,
+  navigationRef,
+  onNavigate,
+  onBusyChange,
+  autoStart,
 }: {
   source: string;
   model: string;
@@ -21,16 +30,26 @@ export function RunStep({
   modelRecord: StoredModel | null;
   sourceRecord: VisionSource | null;
   onComplete: () => Promise<void>;
+  controlsTarget?: HTMLElement | null;
+  navigationRef?: Ref<RunNavigation>;
+  onNavigate: (step: number) => void;
+  onBusyChange: (busy: boolean) => void;
+  autoStart?: boolean;
 }) {
   const classify = modelRecord?.task === "classify";
   const names = modelRecord?.inspection.metadata?.names ?? {};
   const rows = [
-    ["Source", source],
+    ["Nguồn", source],
     ["Model", model],
     ...(!classify
       ? [["Confidence / IoU", `${parameters.confidence} / ${parameters.iou}`]]
       : []),
-    ...(sourceKind && ["stream", "webcam"].includes(sourceKind) ? [["Giới hạn AI", `${parameters.liveFps} FPS`], ["Giới hạn chạy", `${parameters.liveMinutes} phút`]] : []),
+    ...(sourceKind && ["stream", "webcam"].includes(sourceKind)
+      ? [
+          ["Giới hạn AI", `${parameters.liveFps} FPS`],
+          ["Giới hạn chạy", `${parameters.liveMinutes} phút`],
+        ]
+      : []),
     ["Kích thước đầu vào", imageSizeLabel(parameters.imageSize)],
     ["Thiết bị", deviceLabels[parameters.device]],
     [
@@ -38,8 +57,8 @@ export function RunStep({
       parameters.textPromptEnabled
         ? parameters.textPrompts
         : classify || parameters.classMode === "all"
-        ? "Tất cả class"
-        : parameters.classes.map((id) => names[id] ?? id).join(", "),
+          ? "Tất cả class"
+          : parameters.classes.map((id) => names[id] ?? id).join(", "),
     ],
     ...(!classify
       ? [
@@ -53,31 +72,33 @@ export function RunStep({
       : []),
   ];
   return (
-    <div className="space-y-6">
-      <RunWorkspace
-        source={sourceRecord}
-        model={modelRecord}
-        parameters={parameters}
-        onComplete={onComplete}
-      />
-      <details className="group border-t pt-6">
-        <summary className="cursor-pointer text-sm font-semibold">
-          Cấu hình lượt chạy
-        </summary>
-        <div className="pt-4">
-          <dl className="divide-y text-sm">
-            {rows.map(([label, value]) => (
-              <div
-                key={label}
-                className="grid gap-2 py-3 first:pt-0 sm:grid-cols-[11rem_1fr] sm:gap-4"
-              >
-                <dt className="text-muted-foreground">{label}</dt>
-                <dd className="min-w-0 break-words font-medium">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </details>
-    </div>
+    <RunWorkspace
+      source={sourceRecord}
+      model={modelRecord}
+      parameters={parameters}
+      onComplete={onComplete}
+      controlsTarget={controlsTarget}
+      navigationRef={navigationRef}
+      onNavigate={onNavigate}
+      onBusyChange={onBusyChange}
+      autoStart={autoStart}
+      configuration={
+        <details className="border-t pt-4">
+          <summary className="cursor-pointer text-xs font-medium">
+            Cấu hình lượt chạy
+          </summary>
+          <div className="pt-4">
+            <dl className="divide-y text-sm">
+              {rows.map(([label, value]) => (
+                <div key={label} className="space-y-1 py-2 first:pt-0">
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
+                  <dd className="min-w-0 break-words font-medium">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </details>
+      }
+    />
   );
 }

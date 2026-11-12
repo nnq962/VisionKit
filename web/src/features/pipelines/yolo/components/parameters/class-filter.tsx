@@ -27,7 +27,7 @@ export function ClassFilter({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id="class-filter-heading" className="text-sm font-semibold">
-          Lọc class
+          Đối tượng nhận diện
         </h3>
         <span className="text-xs text-muted-foreground tabular-nums">
           {parameters.classMode === "all"
@@ -48,7 +48,7 @@ export function ClassFilter({
               aria-pressed={parameters.classMode === "all"}
               onClick={() => onChange({ ...parameters, classMode: "all" })}
             >
-              Tất cả class
+              Tất cả
             </Button>
             <Button
               size="sm"
@@ -58,7 +58,7 @@ export function ClassFilter({
               aria-pressed={parameters.classMode === "selected"}
               onClick={() => onChange({ ...parameters, classMode: "selected" })}
             >
-              Chọn class
+              Tuỳ chọn
             </Button>
           </div>
           {parameters.classMode === "selected" && (
@@ -73,7 +73,7 @@ export function ClassFilter({
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </div>
-              <fieldset className="grid max-h-56 grid-cols-2 gap-1 overflow-y-auto rounded-lg border p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <fieldset className="grid grid-cols-2 gap-1 rounded-lg border p-2">
                 <legend className="sr-only">Các class cần nhận diện</legend>
                 {filtered.map(([id, name]) => (
                   <label
@@ -114,7 +114,7 @@ export function ClassFilter({
         </>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Model chưa có danh sách class. Dùng toàn bộ class khi chạy.
+          Chưa có danh sách nhãn. AI sẽ nhận diện tất cả.
         </p>
       )}
     </section>

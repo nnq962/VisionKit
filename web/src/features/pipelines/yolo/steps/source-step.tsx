@@ -9,6 +9,8 @@ import type { SourceSelection } from "@/features/sources/use-source-selection";
 
 export function SourceStep({ selection }: { selection: SourceSelection }) {
   const mode = selection.mode;
+  const directFileSave =
+    mode === "new" && ["image", "screen", "video"].includes(selection.kind);
   if (!selection.draftsReady)
     return (
       <p role="status" className="text-sm text-muted-foreground">
@@ -18,74 +20,80 @@ export function SourceStep({ selection }: { selection: SourceSelection }) {
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
       <div className="min-w-0 space-y-4">
-      <div
-        className="flex flex-wrap gap-2"
-        role="group"
-        aria-label="Cách chọn source"
-      >
-        <Button
-          size="sm"
-          variant={mode === "new" ? "secondary" : "ghost"}
-          aria-pressed={mode === "new"}
-          disabled={selection.saving}
-          onClick={() => selection.setMode("new")}
+        <div
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg bg-muted/60 p-1"
+          role="group"
+          aria-label="Cách chọn nguồn"
         >
-          <PlusIcon />
-          Source mới
-          {selection.draftCount > 0 && (
-            <span className="rounded bg-accent px-1.5 py-0.5 text-xs text-accent-foreground">
-              {selection.draftCount} nháp
-            </span>
-          )}
-        </Button>
-        <Button
-          size="sm"
-          variant={mode === "saved" ? "secondary" : "ghost"}
-          aria-pressed={mode === "saved"}
-          disabled={selection.saving}
-          onClick={() => selection.setMode("saved")}
-        >
-          <BookmarkIcon />
-          Đã lưu ({selection.libraryTotal})
-        </Button>
-      </div>
-      {mode === "new" && <SourceDraftNotice
-        key={`${mode}-${selection.kind}`}
-        selection={selection}
-      />}
+          <Button
+            size="default"
+            variant={mode === "new" ? "outline" : "ghost"}
+            aria-pressed={mode === "new"}
+            disabled={selection.saving}
+            onClick={() => selection.setMode("new")}
+          >
+            <PlusIcon />
+            Nguồn mới
+            {selection.draftCount > 0 && (
+              <span className="rounded bg-accent px-1.5 py-0.5 text-xs text-accent-foreground">
+                {selection.draftCount} nháp
+              </span>
+            )}
+          </Button>
+          <Button
+            size="default"
+            variant={mode === "saved" ? "outline" : "ghost"}
+            aria-pressed={mode === "saved"}
+            disabled={selection.saving}
+            onClick={() => selection.setMode("saved")}
+          >
+            <BookmarkIcon />
+            Thư viện ({selection.libraryTotal})
+          </Button>
+        </div>
+        {mode === "new" && (
+          <SourceDraftNotice
+            key={`${mode}-${selection.kind}`}
+            selection={selection}
+          />
+        )}
         <div className="space-y-6">
           {mode === "new" ? (
             <NewSourceForm selection={selection} />
           ) : (
             <SavedSourceList selection={selection} />
           )}
-          {mode === "new" && <SourceSaveForm selection={selection} />}
-          {selection.saveError && (
+          {selection.saveError && !directFileSave && (
             <p role="alert" className="text-sm text-destructive">
               {selection.saveError}
             </p>
           )}
-          {selection.notice && (
+          {selection.notice && !directFileSave && (
             <p role="status" className="text-sm text-success">
               {selection.notice}
             </p>
           )}
         </div>
       </div>
-        <div
-          className="min-w-0 lg:sticky lg:top-24"
-          aria-live="polite"
-          aria-busy={selection.source?.status === "loading"}
-        >
-          <SourceDetails
-            compact
-            source={selection.source}
-            emptyKind={selection.kind}
-            onOpenCamera={
-              mode === "saved" ? () => void selection.openCamera() : undefined
-            }
-          />
-        </div>
+      <div
+        className="min-w-0 lg:sticky lg:top-6"
+        aria-live="polite"
+        aria-busy={selection.source?.status === "loading"}
+      >
+        <SourceDetails
+          compact
+          source={selection.source}
+          emptyKind={selection.kind}
+          footer={
+            directFileSave ? (
+              <SourceSaveForm selection={selection} />
+            ) : undefined
+          }
+          onOpenCamera={
+            mode === "saved" ? () => void selection.openCamera() : undefined
+          }
+        />
+      </div>
     </div>
   );
 }

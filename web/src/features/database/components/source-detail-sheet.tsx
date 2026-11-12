@@ -89,14 +89,14 @@ export function SourceDetailSheet({
         }}
       >
         <SheetHeader className="border-b p-4 pr-14 md:p-6">
-          <SheetTitle>{source?.kind === "stream" ? source.name : "Chi tiết source"}</SheetTitle>
+          <SheetTitle>{source?.kind === "stream" ? source.name : "Chi tiết nguồn"}</SheetTitle>
           <SheetDescription className="sr-only">
-            Xem trước, sửa cấu hình, đổi tên hoặc xoá source đã lưu.
+            Xem trước và quản lý nguồn đã lưu.
           </SheetDescription>
         </SheetHeader>
         {source && (
           <div className="space-y-6 px-4 pb-6 md:px-6 [&_aside]:border-0 [&_aside]:p-0">
-            <div className="space-y-6">
+            <div>
               <SourceDetails source={source} />
               <StorageDetails rows={storage} />
             </div>
