@@ -197,22 +197,26 @@ tiếp từng bước đã đủ nguồn/model; thêm video dùng chung vùng k�
 pipeline. Khi AI đang chạy vẫn có thể chuyển các bước hoặc chọn cấu
 hình khác; vùng/thông số chỉ sửa được sau khi dừng nguồn đang đếm.
 
-Hai màn dùng chung YOLOE `.pt`,
-Model Hub, file/RTSP, MediaMTX, worker và cơ chế dừng. Bộ prompt y tế mặc định:
+Hai màn hỗ trợ YOLO detect/segment (`.pt`/`.onnx`, có metadata nhãn) và YOLOE `.pt`,
+cùng Model Hub, file/RTSP, MediaMTX, worker và cơ chế dừng. YOLOE có bộ prompt y tế mặc định:
 `person`, `wheelchair`, `hospital stretcher`, `hospital bed`, `medical trolley`,
 `IV pole`; có thể tùy chỉnh class. Đây là số detection trong từng frame, chưa
 tracking hoặc đếm lượt vào/ra.
 
-Màn cấu hình gồm ba bước, với **Quay lại / Tiếp tục** để giữ lựa chọn:
+Màn cấu hình gồm bốn bước; chuyển bước giữ nguyên vùng và các thông số chưa lưu:
 
 1. **Chọn source**: chuyển giữa **Source mới / Đã lưu**, tìm/lọc video hoặc RTSP
    và xem thông tin nguồn ở bên cạnh. Nguồn mới cần lưu trước khi tiếp tục.
-2. **Chọn model**: danh sách YOLOE .pt và thông tin model dùng chung với pipeline.
-3. **Vùng và thông số**: tùy chỉnh **Class YOLOE** (mỗi dòng một class hoặc ngăn bằng
-   dấu phẩy) rồi **Áp dụng class**. Tối đa 80 class, mỗi class 80 ký tự; lưu cùng nguồn,
-   từng vùng chọn tập class riêng. Có thể dùng lại **Bộ class y tế**. Chọn khung hình, bấm **Vẽ vùng**, bấm từ 3–32 đỉnh rồi
-   **Hoàn tất vùng**. Đặt tên/màu, chọn class và kéo đỉnh để sửa; chỉnh Confidence,
-   IoU và thiết bị. **Lưu cấu hình** kiểm tra thông số và lưu vào cấu hình đang chọn.
+2. **Chọn model**: danh sách YOLO / YOLOE và thông tin model dùng chung với pipeline.
+3. **Vùng đếm**: công cụ vẽ sát video, danh sách vùng và thuộc tính ở bên cạnh.
+   Mở **Đối tượng cần đếm** để chọn nhãn YOLO hoặc nhập text prompt YOLOE; tối đa
+   80 text prompt với YOLOE. YOLO thường mặc định chọn tất cả nhãn model. Vùng là tuỳ chọn: không có vùng thì chỉ nhận diện, không tính số đếm. Khi cần đếm, vẽ 3–32 đỉnh rồi đặt tên, màu và chọn class cho từng vùng.
+4. **Thông số & 24/7**: chỉnh Confidence, IoU, thiết bị và chế độ chạy.
+   **Chạy một lượt** dừng khi hết video hoặc hết thời lượng camera.
+   **Chạy liên tục 24/7** tự nối lượt, lặp video và thử kết nối lại khi lỗi.
+   Bật **Tự khởi động** để nút đổi thành **Lưu & chạy 24/7**: chạy ngay sau khi
+   lưu và phục hồi khi dịch vụ khởi động lại. Nếu không bật, lưu rồi bắt đầu từ
+   Counting Monitor. Nút Dừng kết thúc chế độ chạy; máy và dịch vụ phải hoạt động.
 
 Màn giám sát tách riêng Bounding box, tên class/confidence, segmentation và điểm
 đếm. Số liệu cập nhật qua WebSocket; tải lại trang khôi phục lượt đang chạy.

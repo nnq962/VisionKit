@@ -501,8 +501,11 @@ nguồn làm vùng cũ stale. Lưu vùng giữ nguyên metadata và không sửa
 
 `POST /api/v1/counting/runs` nhận `source_id`, `model_id`, `source_signature`,
 `config`, `options` thông thường và `duration_seconds` cho RTSP. Chỉ nhận nguồn
-video/RTSP đã lưu và model YOLOE PT; cần ít nhất một vùng. Backend luôn ghi đè
-text_prompts thành `config.classes` theo đúng thứ tự và classes=null. Vùng nằm ở RunRecord.counting,
+video/RTSP đã lưu và model YOLO detect/segment (PT/ONNX) hoặc YOLOE PT. Danh sách vùng có thể rỗng; khi đó vẫn chạy nhận diện và trả `counts=null`.
+Với YOLO thường, backend ánh xạ `config.classes` sang class ID trong metadata và
+đặt `text_prompts=null`; nhãn không thuộc model bị từ chối. Với YOLOE, backend đặt
+`text_prompts=config.classes` theo đúng thứ tự và `classes=null`. Các tham số class
+do client truyền vào được thay bằng cấu hình đếm. Vùng nằm ở RunRecord.counting,
 không gửi sang AI. RunRecord.counts chứa valid/reason, frame_id, timestamp_ms,
 anchor=bottom_center và regions với counts theo nhãn. Đếm mỗi frame độc lập, dùng
 điểm giữa đáy bbox; biên thuộc vùng, vùng chồng nhau đếm riêng. Tỷ lệ ảnh lệch trên

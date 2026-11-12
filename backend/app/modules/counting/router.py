@@ -176,8 +176,6 @@ def store_profile(
                 raise SourceError(
                     409, "Nguồn đã thay đổi. Tải lại nguồn và vẽ lại vùng."
                 )
-            if not body.config.zones:
-                raise SourceError(422, "Vẽ ít nhất một vùng trước khi lưu cấu hình.")
             previous = connection.execute(
                 "SELECT * FROM counting_profiles WHERE id=? AND deleted_at IS NULL",
                 (profile_id,),
@@ -534,7 +532,7 @@ def save_config(source_id: UUID, body: ConfigSave, request: Request) -> dict:
 async def create_counting_run(body: CountingRunCreate, request: Request) -> RunRecord:
     """Snapshot vùng vào run và dùng chung worker/video/relay cùng cơ chế cancel.
 
-    Chỉ chạy YOLOE PT với danh sách prompt đã kiểm tra; dữ liệu vùng không gửi sang AI.
+    Chạy YOLO với class có sẵn hoặc YOLOE PT với prompt; vùng không gửi sang AI.
     Vùng chồng nhau đếm độc lập. Video được snapshot như lượt inference thông thường.
     """
     lock = getattr(request.app.state, "counting_creation_lock", None)
@@ -555,8 +553,6 @@ async def enqueue_counting_run(body: CountingRunCreate, request: Request) -> Run
     source = counting_source(request, str(body.source_id))
     if source_signature(source) != body.source_signature:
         raise SourceError(409, "Nguồn đã thay đổi. Tải lại nguồn và vẽ lại vùng.")
-    if not body.config.zones:
-        raise SourceError(422, "Vẽ ít nhất một vùng trước khi chạy.")
     existing = read_config(body.source_id, request)["current_run_id"]
     if existing and request.app.state.runs.get(existing).status in {
         "queued",
@@ -565,9 +561,7 @@ async def enqueue_counting_run(body: CountingRunCreate, request: Request) -> Run
         raise SourceError(
             409, "Nguồn đang chạy đếm. Tải lại màn giám sát để quan sát hoặc dừng."
         )
-    options = body.options.model_copy(
-        update={"text_prompts": list(body.config.classes), "classes": None}
-    )
+    options = body.options
     runs = request.app.state.runs
     if source.kind.value == "stream":
         record = await runs.create_live(

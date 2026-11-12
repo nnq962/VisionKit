@@ -10,10 +10,12 @@ export function RunMetrics({
   result,
   progress,
   video,
+  compact = false,
 }: {
   result: InferenceResult | null;
   progress: InferenceRun["progress"];
   video: boolean;
+  compact?: boolean;
 }) {
   const topClass = result?.classifications?.[0];
   const elapsed = result ? `${number(result.elapsedMs / 1000, 2)} s` : "—";
@@ -58,7 +60,7 @@ export function RunMetrics({
   return (
     <dl
       aria-label="Hiệu năng suy luận"
-      className="grid grid-cols-2 gap-x-4 gap-y-3 border-b pb-4 sm:grid-cols-4"
+      className={`grid grid-cols-2 gap-x-4 gap-y-3 ${compact ? "" : "border-b pb-4 sm:grid-cols-4"}`}
     >
       {metrics.map((metric) => (
         <div
@@ -66,13 +68,19 @@ export function RunMetrics({
           title={[metric.title, metric.detail].filter(Boolean).join(" ")}
           className="grid min-w-0 gap-1 text-left"
         >
-          <dt title={metric.label} className="truncate text-xs leading-4 text-muted-foreground">{metric.label}</dt>
-          <dd title={metric.value} className="min-w-0 truncate text-base leading-5 font-semibold tabular-nums">
+          <dt
+            title={metric.label}
+            className="truncate text-xs leading-4 text-muted-foreground"
+          >
+            {metric.label}
+          </dt>
+          <dd
+            title={metric.value}
+            className="min-w-0 truncate text-base leading-5 font-semibold tabular-nums"
+          >
             {metric.value}
           </dd>
-          <dd className="sr-only">
-            {metric.detail}
-          </dd>
+          <dd className="sr-only">{metric.detail}</dd>
         </div>
       ))}
     </dl>

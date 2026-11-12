@@ -128,7 +128,7 @@ class CountingTests(unittest.TestCase):
             [" "],
             ["x" * 81],
             ["a\tb"],
-            [str(i) for i in range(81)],
+            [str(i) for i in range(10001)],
         ]:
             with self.subTest(classes=classes), self.assertRaises(ValidationError):
                 CountingConfig(

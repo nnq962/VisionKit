@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useImperativeHandle, useState, type Ref } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useState,
+  type Ref,
+} from "react";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -31,6 +37,13 @@ import { OverlayControls } from "@/features/inference/components/overlay-control
 import { RunMetrics } from "@/features/inference/components/run-metrics";
 import { ThresholdSlider } from "@/features/pipelines/yolo/components/parameters/threshold-slider";
 import { CountingPreview } from "./counting-preview";
+import { CountingSchedule } from "./counting-schedule";
+import { CountingClassPicker } from "./counting-class-picker";
+import {
+  countingModelClasses,
+  reconcileCountingClasses,
+  usesCountingPrompts,
+} from "./counting-model";
 import {
   defaultCountingClasses,
   countingClassLabel,
@@ -88,9 +101,13 @@ export function ZoneWorkspace({
 }) {
   const session = useCountingRun(source.id);
   const { run, active } = session;
+  const [classModelId, setClassModelId] = useState<string | null>(null);
+  const promptMode = usesCountingPrompts(model);
+  const availableClasses = countingModelClasses(model);
   const [classes, setClasses] = useState<string[]>(defaultCountingClasses);
   const [classText, setClassText] = useState(defaultCountingClasses.join("\n"));
   const classTextChanged =
+    promptMode &&
     JSON.stringify(parseTextPrompts(classText)) !== JSON.stringify(classes);
   const [zones, setZones] = useState<CountingZone[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -124,7 +141,7 @@ export function ZoneWorkspace({
   const [connected, setConnected] = useState(source.kind !== "stream");
   const canEditRun = configureOnly ? !active : !run;
   const editable =
-    step === 2 &&
+    (step === 2 || (configureOnly && step === 3)) &&
     canEditRun &&
     !loading &&
     !saving &&
@@ -141,8 +158,8 @@ export function ZoneWorkspace({
   const config = {
     version: 1 as const,
     classes,
-    reference_width: original.width,
-    reference_height: original.height,
+    reference_width: original.width || 1,
+    reference_height: original.height || 1,
     zones,
   };
   const changed = JSON.stringify(config) !== saved;
@@ -165,14 +182,14 @@ export function ZoneWorkspace({
   }, [loading, savedEditor, editorFingerprint, onDirtyChange]);
   const aspectChanged = Boolean(
     zones.length &&
-    dimensions.width &&
-    reference &&
-    Math.abs(
-      dimensions.width /
-        dimensions.height /
-        (reference.width / reference.height) -
-        1,
-    ) > 0.01,
+      dimensions.width &&
+      reference &&
+      Math.abs(
+        dimensions.width /
+          dimensions.height /
+          (reference.width / reference.height) -
+          1,
+      ) > 0.01,
   );
   const zone = zones.find((item) => item.id === selected);
   useEffect(() => {
@@ -207,6 +224,7 @@ export function ZoneWorkspace({
           setMinutes(String(monitor.duration_seconds / 60));
           if (configureOnly) onRestoreModel(monitor.model_id);
         }
+        setClassModelId(monitor?.model_id ?? null);
         const restoredClasses = restored?.classes ?? defaultCountingClasses;
         setSavedEditor(
           JSON.stringify({
@@ -260,6 +278,22 @@ export function ZoneWorkspace({
     onRestoreModel,
     initialProfile,
   ]);
+  if (!loading && model && classModelId !== model.id) {
+    setClassModelId(model.id);
+    if (!usesCountingPrompts(model)) {
+      const next = countingModelClasses(model);
+      setClasses(next);
+      setClassText(next.join("\n"));
+      setZones((items) =>
+        items.map((item) => ({
+          ...item,
+          classes: reconcileCountingClasses(item.classes, next),
+        })),
+      );
+      setDraft(null);
+      setError("");
+    }
+  }
   const onDimensions = useCallback(
     (width: number, height: number) => setDimensions({ width, height }),
     [],
@@ -300,6 +334,10 @@ export function ZoneWorkspace({
       return;
     }
     const next = parseTextPrompts(classText);
+    updateClasses(next);
+    setNotice("Đã áp dụng class.");
+  }
+  function updateClasses(next: string[]) {
     setZones((items) =>
       items.map((item) => {
         const kept = item.classes.filter((label) => next.includes(label));
@@ -315,14 +353,17 @@ export function ZoneWorkspace({
     setClasses(next);
     setClassText(next.join("\n"));
     setError("");
-    setNotice("Đã áp dụng class.");
+    setNotice("");
   }
   function validate() {
+    if (!classes.length) return "Chọn ít nhất một class cần đếm.";
+    if (!promptMode && classes.some((name) => !availableClasses.includes(name)))
+      return "Chọn lại class từ nhãn có sẵn của model hiện tại.";
     if (classTextChanged)
       return "Bấm Áp dụng class trước khi lưu hoặc tiếp tục.";
     if (!signature)
       return "Chưa tải được cấu hình nguồn. Tải lại trang để thử lại.";
-    if (!original.width || !original.height)
+    if (zones.length && (!original.width || !original.height))
       return "Chờ video hoặc camera có hình trước khi vẽ vùng.";
     if (aspectChanged)
       return "Tỷ lệ khung hình đã đổi. Xoá các vùng cũ và vẽ lại.";
@@ -352,7 +393,9 @@ export function ZoneWorkspace({
     setNotice("");
     try {
       if (configureOnly && (!model || validateParameters())) {
-        const message = !model ? "Chọn model YOLOE trước khi lưu." : validateParameters();
+        const message = !model
+          ? "Chọn model YOLO / YOLOE trước khi lưu."
+          : validateParameters();
         setError(message);
         toast.error(message);
         return false;
@@ -371,7 +414,7 @@ export function ZoneWorkspace({
               device,
               max_fps: Number(fps),
             },
-            duration_seconds: Number(minutes) * 60,
+            duration_seconds: continuous ? 3600 : Number(minutes) * 60,
             continuous,
             auto_start: continuous && autoStart,
           },
@@ -407,19 +450,17 @@ export function ZoneWorkspace({
       !Number.isFinite(Number(fps)) ||
       Number(fps) < 1 ||
       Number(fps) > 60 ||
-      !Number.isInteger(Number(minutes)) ||
-      Number(minutes) < 1 ||
-      Number(minutes) > 240
+      (!(configureOnly && continuous) &&
+        (!Number.isInteger(Number(minutes)) ||
+          Number(minutes) < 1 ||
+          Number(minutes) > 240))
     ) {
       return "Confidence/IoU phải từ 0–1, FPS từ 1–60 và thời lượng từ 1–240 phút.";
     }
     return "";
   }
   async function next() {
-    const invalid =
-      validate() ||
-      validateParameters() ||
-      (!zones.length ? "Vẽ ít nhất một vùng trước khi tiếp tục." : "");
+    const invalid = validate() || validateParameters();
     if (invalid) {
       setError(invalid);
       return;
@@ -433,13 +474,8 @@ export function ZoneWorkspace({
   }
   async function start() {
     const invalid = validate();
-    if (invalid || !zones.length || !model) {
-      setError(
-        invalid ||
-          (!model
-            ? "Chọn model YOLOE trước."
-            : "Vẽ ít nhất một vùng trước khi chạy."),
-      );
+    if (invalid || !model) {
+      setError(invalid || "Chọn model YOLO / YOLOE trước.");
       return;
     }
     const invalidParameters = validateParameters();
@@ -562,7 +598,6 @@ export function ZoneWorkspace({
             session.busy ||
             !model ||
             draft !== null ||
-            !zones.length ||
             aspectChanged
           }
           onClick={() => void start()}
@@ -624,6 +659,531 @@ export function ZoneWorkspace({
       )}
     </>
   );
+  const classEditor = (
+    <fieldset disabled={!editable || draft !== null} className="space-y-4">
+      <legend
+        className={configureOnly ? "sr-only" : "mb-4 text-sm font-semibold"}
+      >
+        Đối tượng cần đếm
+      </legend>
+      {promptMode ? (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="counting-classes">Text prompt YOLOE</Label>
+            <textarea
+              id="counting-classes"
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50"
+              value={classText}
+              rows={5}
+              onChange={(event) => {
+                setClassText(event.target.value);
+                setError("");
+              }}
+              aria-describedby="counting-classes-hint"
+              placeholder={"person\ncar\nlaptop\ncell phone"}
+            />
+            <p
+              id="counting-classes-hint"
+              className="text-xs leading-5 text-muted-foreground"
+            >
+              Tên tiếng Anh · mỗi dòng một class · tối đa 80.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={!classTextChanged}
+              onClick={applyClasses}
+            >
+              Áp dụng class
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setClassText(defaultCountingClasses.join("\n"));
+                setError("");
+              }}
+            >
+              Bộ class y tế
+            </Button>
+          </div>
+        </>
+      ) : (
+        <CountingClassPicker
+          names={availableClasses}
+          selected={classes}
+          onChange={updateClasses}
+        />
+      )}
+    </fieldset>
+  );
+  const parameterEditor = (
+    <fieldset
+      disabled={!editable}
+      className={configureOnly ? "space-y-5" : "grid gap-6 sm:grid-cols-2"}
+    >
+      <legend className="mb-4 text-sm font-semibold">Thông số nhận diện</legend>
+      <ThresholdSlider
+        id="count-confidence"
+        label="Confidence"
+        hint="Ngưỡng tin cậy · 0–1."
+        value={conf}
+        onChange={setConf}
+      />
+      <ThresholdSlider
+        id="count-iou"
+        label="IoU / NMS"
+        hint="Ngưỡng lọc bbox trùng · 0–1."
+        value={iou}
+        onChange={setIou}
+      />
+      <div className="space-y-2">
+        <Label htmlFor="count-device" className="flex h-8 items-center">
+          Thiết bị
+        </Label>
+        <Select value={device} onValueChange={setDevice}>
+          <SelectTrigger id="count-device" className="h-8 w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="auto">Tự động</SelectItem>
+              <SelectItem value="cpu">CPU</SelectItem>
+              <SelectItem value="cuda:0">CUDA:0</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
+      {!configureOnly && source.kind === "stream" && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="count-fps" className="flex h-8 items-center">
+              Giới hạn AI (FPS)
+            </Label>
+            <Input
+              id="count-fps"
+              className="h-8"
+              type="number"
+              min="1"
+              max="60"
+              value={fps}
+              onChange={(e) => setFps(e.target.value)}
+            />
+          </div>
+          {!continuous && (
+            <div className="space-y-2">
+              <Label htmlFor="count-minutes" className="flex h-8 items-center">
+                Thời lượng (phút)
+              </Label>
+              <Input
+                id="count-minutes"
+                className="h-8"
+                type="number"
+                min="1"
+                max="240"
+                value={minutes}
+                onChange={(e) => setMinutes(e.target.value)}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </fieldset>
+  );
+  const regionEditor = (
+    <div
+      className={
+        step === 2
+          ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]"
+          : "grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]"
+      }
+    >
+      <div className="min-w-0 space-y-3 lg:sticky lg:top-6">
+        {canEditRun && (
+          <div className="flex flex-wrap gap-2">
+            {draft === null ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!editable || !dimensions.width || zones.length >= 20}
+                onClick={() => {
+                  setDraft([]);
+                  setSelected(null);
+                  setError("");
+                }}
+              >
+                <PlusIcon />
+                Vẽ vùng
+              </Button>
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  disabled={draft.length < 3}
+                  onClick={finishDraft}
+                >
+                  Hoàn tất vùng
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setDraft((items) => items?.slice(0, -1) ?? null)
+                  }
+                >
+                  Bỏ đỉnh cuối
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDraft(null);
+                    setError("");
+                  }}
+                >
+                  Huỷ nét vẽ
+                </Button>
+              </>
+            )}
+            {!configureOnly && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!editable || draft !== null || !changed}
+                onClick={() => void save()}
+              >
+                <SaveIcon />
+                {saving ? "Đang lưu…" : "Lưu vùng"}
+              </Button>
+            )}
+          </div>
+        )}
+        <CountingPreview
+          key={source.id}
+          source={source}
+          run={configureOnly ? null : run}
+          zones={displayedZones}
+          selected={selected}
+          draft={draft}
+          editable={(editable && step === 2) || (step === 2 && saving)}
+          interactionDisabled={saving}
+          boxes={boxes}
+          labels={labels}
+          segments={segments}
+          anchors={anchors}
+          onSelect={setSelected}
+          onDimensions={onDimensions}
+          onConnection={setConnected}
+          onPoint={(point) => {
+            if (draft && draft.length >= 32) {
+              setError("Tối đa 32 đỉnh mỗi vùng.");
+              return;
+            }
+            setDraft((items) => (items ? [...items, point] : items));
+          }}
+          onMove={(id, index, point) =>
+            setZones((items) =>
+              items.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      points: item.points.map((p, i) =>
+                        i === index ? point : p,
+                      ),
+                    }
+                  : item,
+              ),
+            )
+          }
+        />
+        {step === 2 && (
+          <div className="rounded-lg border px-4 py-3">{displayControls}</div>
+        )}
+        <p className="text-xs leading-5 text-muted-foreground">
+          Đếm điểm giữa đáy khung theo từng frame, riêng cho mỗi vùng.
+        </p>
+      </div>
+      {!configureOnly && step === 3 && (
+        <aside
+          aria-label="Tuỳ chọn hiển thị"
+          className="min-w-0 space-y-4 border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+        >
+          {displayControls}
+          {run?.result && (
+            <p className="border-t pt-4 text-xs text-muted-foreground">
+              Frame {run.result.frameId ?? 0} ·{" "}
+              {((run.result.timestampMs ?? 0) / 1000).toFixed(2)}s
+            </p>
+          )}
+        </aside>
+      )}
+      <div
+        hidden={step !== 2}
+        className="min-w-0 space-y-4 rounded-xl border p-4"
+      >
+        {configureOnly && (
+          <section
+            className="space-y-3 border-b pb-4"
+            aria-label="Đối tượng cần đếm"
+          >
+            <h3 className="text-sm font-semibold">
+              Đối tượng cần đếm{" "}
+              <span className="text-xs font-normal text-muted-foreground">
+                {promptMode ? `(${classes.length})` : ""}
+              </span>
+            </h3>
+            {classEditor}
+          </section>
+        )}
+        <h3 className="text-sm font-semibold">
+          Vùng đếm{" "}
+          <span className="ml-1 text-xs font-normal text-muted-foreground">
+            {zones.length} / 20
+          </span>
+        </h3>
+        {draft !== null && (
+          <p className="text-sm text-muted-foreground">
+            Bấm thêm đỉnh ({draft.length}/32) → Hoàn tất vùng.
+          </p>
+        )}
+        <div
+          className="space-y-1 rounded-lg border p-1"
+          aria-label="Danh sách vùng"
+        >
+          {displayedZones.length ? (
+            displayedZones.map((item) => (
+              <Button
+                key={item.id}
+                variant={selected === item.id ? "secondary" : "ghost"}
+                className="w-full justify-start"
+                onClick={() => setSelected(item.id)}
+              >
+                <span
+                  className="size-3 shrink-0 rounded-full"
+                  style={{ background: item.color }}
+                />
+                {item.name}
+              </Button>
+            ))
+          ) : (
+            <p className="p-3 text-xs leading-5 text-muted-foreground">
+              Chưa có vùng · chỉ nhận diện, không đếm.
+            </p>
+          )}
+        </div>
+        {zone && editable && draft === null && (
+          <div className="space-y-4 border-t pt-4">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="zone-name">Tên vùng</Label>
+                <Input
+                  id="zone-name"
+                  value={zone.name}
+                  maxLength={60}
+                  onChange={(event) => patchZone({ name: event.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="zone-color">Màu vùng</Label>
+                <input
+                  id="zone-color"
+                  className="h-9 w-12 cursor-pointer rounded-md border border-input bg-transparent p-1"
+                  type="color"
+                  value={zone.color}
+                  onChange={(event) => patchZone({ color: event.target.value })}
+                />
+              </div>
+            </div>
+            <fieldset className="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto">
+              <legend className="mb-2 text-sm font-medium">
+                Class trong vùng
+              </legend>
+              {classes.map((key) => (
+                <label key={key} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-3.5 shrink-0 accent-primary"
+                    checked={zone.classes.includes(key)}
+                    onChange={(event) =>
+                      patchZone({
+                        classes: event.target.checked
+                          ? [...zone.classes, key]
+                          : zone.classes.filter((value) => value !== key),
+                      })
+                    }
+                  />
+                  {countingClassLabel(key)}
+                </label>
+              ))}
+            </fieldset>
+            <p className="text-xs text-muted-foreground">
+              Kéo đỉnh để sửa vùng.
+            </p>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                setZones((items) =>
+                  items.filter((item) => item.id !== selected),
+                );
+                setSelected(null);
+                if (zones.length === 1) setReference(null);
+              }}
+            >
+              Xoá vùng
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+  if (configureOnly)
+    return (
+      <WorkspaceSection
+        title={step === 3 ? "Thông số & chế độ chạy" : "Thiết lập vùng đếm"}
+        titleId="counting-configuration-heading"
+        variant="plain"
+        showHeader={false}
+        toolbarLabel="Thao tác cấu hình đếm vùng"
+        toolbar={
+          <div className="flex w-full flex-wrap items-center justify-between gap-3">
+            <div>
+              <span className="text-sm font-semibold">
+                {step === 3 ? "Thông số & chế độ chạy" : "Thiết lập vùng đếm"}
+              </span>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {step === 3
+                  ? "Điều chỉnh nhận diện và chọn cách vận hành."
+                  : "Vẽ vùng nếu cần đếm; bỏ qua để chỉ nhận diện."}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="ghost"
+                disabled={locked}
+                onClick={() => onStepChange(step === 3 ? 2 : 1)}
+              >
+                <ArrowLeftIcon />
+                Quay lại
+              </Button>
+              {active && (
+                <Button
+                  variant="outline"
+                  disabled={session.busy}
+                  onClick={() => void session.stop()}
+                >
+                  <SquareIcon />
+                  Dừng để chỉnh sửa
+                </Button>
+              )}
+              <Button
+                size="lg"
+                disabled={
+                  !editable ||
+                  !model ||
+                  draft !== null ||
+                  aspectChanged ||
+                  (step === 3 && !profileName?.trim())
+                }
+                onClick={() => {
+                  if (step === 2) {
+                    const invalid = validate();
+                    if (invalid) {
+                      setError(invalid);
+                      return;
+                    }
+                    setError("");
+                    onStepChange(3);
+                  } else void save();
+                }}
+              >
+                {step === 2 ? <ArrowRightIcon /> : <SaveIcon />}
+                {step === 2
+                  ? "Thông số & chế độ chạy"
+                  : saving
+                    ? "Đang lưu…"
+                    : continuous && autoStart
+                      ? "Lưu & chạy 24/7"
+                      : "Lưu cấu hình"}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        {(error || session.error) && (
+          <p
+            role="alert"
+            className="mb-4 rounded-lg bg-destructive/5 p-3 text-sm text-destructive"
+          >
+            {error || session.error}
+          </p>
+        )}
+        {active && (
+          <p role="status" className="mb-4 text-sm text-muted-foreground">
+            Nguồn đang chạy. Dừng để chỉnh sửa cấu hình.
+          </p>
+        )}
+        {notice && (
+          <p role="status" className="mb-4 text-sm text-muted-foreground">
+            {notice}
+          </p>
+        )}
+        <div hidden={step !== 2}>{regionEditor}</div>
+        <div hidden={step !== 3} className="space-y-6">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+            <span className="min-w-0 break-all">
+              Nguồn:{" "}
+              <strong className="font-medium text-foreground">
+                {source.name}
+              </strong>
+            </span>
+            <span>
+              Model:{" "}
+              <strong className="font-medium text-foreground">
+                {model?.name ?? model?.filename}
+              </strong>
+            </span>
+            <span>
+              {zones.length} vùng · {classes.length} class
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={locked}
+              onClick={() => onStepChange(2)}
+            >
+              Sửa vùng
+            </Button>
+          </div>
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+            <section
+              aria-label="Thông số nhận diện"
+              className="rounded-xl border p-4 md:p-6"
+            >
+              {parameterEditor}
+            </section>
+            <CountingSchedule
+              disabled={!editable}
+              sourceKind={source.kind}
+              continuous={continuous}
+              autoStart={autoStart}
+              fps={fps}
+              minutes={minutes}
+              onFpsChange={setFps}
+              onMinutesChange={setMinutes}
+              onContinuousChange={(value) => {
+                setContinuous(value);
+                if (!value) setAutoStart(false);
+              }}
+              onAutoStartChange={setAutoStart}
+            />
+          </div>
+        </div>
+      </WorkspaceSection>
+    );
   return (
     <>
       <WorkspaceSection
@@ -641,23 +1201,16 @@ export function ZoneWorkspace({
             >
               <ArrowLeftIcon /> Quay lại
             </Button>
-            {configureOnly && active && (
-              <Button
-                variant="outline"
-                disabled={session.busy}
-                onClick={() => void session.stop()}
-              >
-                <SquareIcon />
-                Dừng để chỉnh sửa
-              </Button>
-            )}
             {step === 2 ? (
               <Button
                 disabled={
-                  loading || saving || session.busy || !session.ready ||
+                  loading ||
+                  saving ||
+                  session.busy ||
+                  !session.ready ||
                   !model ||
                   draft !== null ||
-                  (!configureOnly && (!editable || !zones.length)) ||
+                  (!configureOnly && !editable) ||
                   aspectChanged
                 }
                 onClick={() => void (configureOnly ? save() : next())}
@@ -849,391 +1402,12 @@ export function ZoneWorkspace({
               )}
             </div>
           )}
-          {step === 2 && configureOnly && (
-            <fieldset disabled={!editable} className="space-y-4 border-t pt-6">
-              <label className="flex items-center justify-between gap-4 text-sm">
-                Chạy liên tục
-                <input
-                  type="checkbox"
-                  className="size-4 accent-primary"
-                  checked={continuous}
-                  onChange={(event) => {
-                    setContinuous(event.target.checked);
-                    if (!event.target.checked) setAutoStart(false);
-                  }}
-                />
-              </label>
-              {continuous && (
-                <>
-                  <label className="flex items-center justify-between gap-4 text-sm">
-                    Tự chạy khi bật dịch vụ
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-primary"
-                      checked={autoStart}
-                      onChange={(event) => setAutoStart(event.target.checked)}
-                    />
-                  </label>
-                  <p className="text-xs text-muted-foreground">
-                    Tự nối lượt và thử lại khi lỗi. Bật tự chạy để khởi động
-                    ngay sau khi lưu và khôi phục sau restart; nút Dừng tắt chế
-                    độ chạy đến khi bạn bật lại.
-                  </p>
-                </>
-              )}
-            </fieldset>
-          )}
+          {regionEditor}
           {step === 2 && canEditRun && (
-            <fieldset
-              disabled={!editable || draft !== null}
-              className="space-y-4 rounded-lg border p-4"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="counting-classes">Class YOLOE</Label>
-                <textarea
-                  id="counting-classes"
-                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50"
-                  value={classText}
-                  rows={5}
-                  onChange={(event) => {
-                    setClassText(event.target.value);
-                    setError("");
-                  }}
-                  aria-describedby="counting-classes-hint"
-                  placeholder={"person\ncar\nlaptop\ncell phone"}
-                />
-                <p
-                  id="counting-classes-hint"
-                  className="text-xs leading-5 text-muted-foreground"
-                >
-                  Tên tiếng Anh, cách nhau bằng dòng hoặc dấu phẩy. Tối đa 80
-                  class.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!classTextChanged}
-                  onClick={applyClasses}
-                >
-                  Áp dụng class
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setClassText(defaultCountingClasses.join("\n"));
-                    setError("");
-                  }}
-                >
-                  Bộ class y tế
-                </Button>
-              </div>
-            </fieldset>
-          )}
-          <div
-            className={
-              step === 2
-                ? "grid items-start gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(16rem,1fr)]"
-                : "grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]"
-            }
-          >
-            <div className="min-w-0 space-y-4">
-              <CountingPreview
-                key={source.id}
-                source={source}
-                run={configureOnly ? null : run}
-                zones={displayedZones}
-                selected={selected}
-                draft={draft}
-                editable={editable || (step === 2 && saving)}
-                interactionDisabled={saving}
-                boxes={boxes}
-                labels={labels}
-                segments={segments}
-                anchors={anchors}
-                onSelect={setSelected}
-                onDimensions={onDimensions}
-                onConnection={setConnected}
-                onPoint={(point) => {
-                  if (draft && draft.length >= 32) {
-                    setError("Tối đa 32 đỉnh mỗi vùng.");
-                    return;
-                  }
-                  setDraft((items) => (items ? [...items, point] : items));
-                }}
-                onMove={(id, index, point) =>
-                  setZones((items) =>
-                    items.map((item) =>
-                      item.id === id
-                        ? {
-                            ...item,
-                            points: item.points.map((p, i) =>
-                              i === index ? point : p,
-                            ),
-                          }
-                        : item,
-                    ),
-                  )
-                }
-              />
-              {step === 2 && <div className="space-y-4">{displayControls}</div>}
-              <details className="text-xs text-muted-foreground">
-                <summary className="w-fit cursor-pointer">Cách đếm</summary>
-                <p className="mt-2 leading-5">
-                  Đếm điểm giữa đáy bbox nằm trong hoặc trên biên vùng, theo
-                  từng frame. Vùng chồng nhau đếm độc lập, không cộng dồn lượt.
-                </p>
-              </details>
+            <div className="grid items-start gap-6 border-t pt-6 lg:grid-cols-2 lg:gap-8">
+              <div className="min-w-0">{classEditor}</div>
+              <div className="min-w-0 space-y-6">{parameterEditor}</div>
             </div>
-            {step === 3 && (
-              <aside
-                aria-label="Tuỳ chọn hiển thị"
-                className="min-w-0 space-y-4 border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
-              >
-                {displayControls}
-                {run?.result && (
-                  <p className="border-t pt-4 text-xs text-muted-foreground">
-                    Frame {run.result.frameId ?? 0} ·{" "}
-                    {((run.result.timestampMs ?? 0) / 1000).toFixed(2)}s
-                  </p>
-                )}
-              </aside>
-            )}
-            <div hidden={step !== 2} className="min-w-0 space-y-6">
-              {canEditRun && (
-                <div className="flex flex-wrap gap-2">
-                  {draft === null ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={
-                        !editable || !dimensions.width || zones.length >= 20
-                      }
-                      onClick={() => {
-                        setDraft([]);
-                        setSelected(null);
-                        setError("");
-                      }}
-                    >
-                      <PlusIcon />
-                      Vẽ vùng
-                    </Button>
-                  ) : (
-                    <>
-                      <Button
-                        size="sm"
-                        disabled={draft.length < 3}
-                        onClick={finishDraft}
-                      >
-                        Hoàn tất vùng
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setDraft((items) => items?.slice(0, -1) ?? null)
-                        }
-                      >
-                        Bỏ đỉnh cuối
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setDraft(null);
-                          setError("");
-                        }}
-                      >
-                        Huỷ nét vẽ
-                      </Button>
-                    </>
-                  )}
-                  {!configureOnly && <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!editable || draft !== null || !changed}
-                    onClick={() => void save()}
-                  >
-                    <SaveIcon />
-                    {saving ? "Đang lưu…" : "Lưu vùng"}
-                  </Button>}
-                </div>
-              )}
-              {draft !== null && (
-                <p className="text-sm text-muted-foreground">
-                  Bấm thêm đỉnh ({draft.length}/32) → Hoàn tất vùng.
-                </p>
-              )}
-              <div className="space-y-2" aria-label="Danh sách vùng">
-                {displayedZones.length ? (
-                  displayedZones.map((item) => (
-                    <Button
-                      key={item.id}
-                      variant={selected === item.id ? "secondary" : "ghost"}
-                      className="w-full justify-start"
-                      onClick={() => setSelected(item.id)}
-                    >
-                      <span
-                        className="size-3 shrink-0 rounded-full"
-                        style={{ background: item.color }}
-                      />
-                      {item.name}
-                    </Button>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Chưa có vùng đếm. Tối đa 20 vùng.
-                  </p>
-                )}
-              </div>
-              {zone && editable && draft === null && (
-                <div className="space-y-6 border-t pt-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="zone-name">Tên vùng</Label>
-                    <Input
-                      id="zone-name"
-                      value={zone.name}
-                      maxLength={60}
-                      onChange={(event) =>
-                        patchZone({ name: event.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="zone-color">Màu vùng</Label>
-                    <input
-                      id="zone-color"
-                      type="color"
-                      value={zone.color}
-                      onChange={(event) =>
-                        patchZone({ color: event.target.value })
-                      }
-                    />
-                  </div>
-                  <fieldset className="space-y-3">
-                    <legend className="mb-2 text-sm font-medium">
-                      Class trong vùng
-                    </legend>
-                    {classes.map((key) => (
-                      <label
-                        key={key}
-                        className="flex items-center gap-2 text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={zone.classes.includes(key)}
-                          onChange={(event) =>
-                            patchZone({
-                              classes: event.target.checked
-                                ? [...zone.classes, key]
-                                : zone.classes.filter((value) => value !== key),
-                            })
-                          }
-                        />
-                        {countingClassLabel(key)}
-                      </label>
-                    ))}
-                  </fieldset>
-                  <p className="text-xs text-muted-foreground">
-                    Kéo đỉnh để sửa vùng.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => {
-                      setZones((items) =>
-                        items.filter((item) => item.id !== selected),
-                      );
-                      setSelected(null);
-                      if (zones.length === 1) setReference(null);
-                    }}
-                  >
-                    Xoá vùng
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-          {step === 2 && canEditRun && (
-            <fieldset
-              disabled={!editable}
-              className="grid gap-6 border-t pt-6 sm:grid-cols-2 lg:grid-cols-3"
-            >
-              <ThresholdSlider
-                id="count-confidence"
-                label="Confidence"
-                hint="Ngưỡng tin cậy · 0–1."
-                value={conf}
-                onChange={setConf}
-              />
-              <ThresholdSlider
-                id="count-iou"
-                label="IoU / NMS"
-                hint="Ngưỡng lọc bbox trùng · 0–1."
-                value={iou}
-                onChange={setIou}
-              />
-              <div className="space-y-2">
-                <Label htmlFor="count-device" className="flex h-8 items-center">
-                  Thiết bị
-                </Label>
-                <Select value={device} onValueChange={setDevice}>
-                  <SelectTrigger id="count-device" className="h-8 w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="auto">Tự động</SelectItem>
-                      <SelectItem value="cpu">CPU</SelectItem>
-                      <SelectItem value="cuda:0">CUDA:0</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-              {source.kind === "stream" && (
-                <>
-                  <div className="space-y-2">
-                    <Label
-                      htmlFor="count-fps"
-                      className="flex h-8 items-center"
-                    >
-                      Giới hạn AI (FPS)
-                    </Label>
-                    <Input
-                      id="count-fps"
-                      className="h-8"
-                      type="number"
-                      min="1"
-                      max="60"
-                      value={fps}
-                      onChange={(e) => setFps(e.target.value)}
-                    />
-                  </div>
-                  {!continuous && (
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="count-minutes"
-                        className="flex h-8 items-center"
-                      >
-                        Thời lượng (phút)
-                      </Label>
-                      <Input
-                        id="count-minutes"
-                        className="h-8"
-                        type="number"
-                        min="1"
-                        max="240"
-                        value={minutes}
-                        onChange={(e) => setMinutes(e.target.value)}
-                      />
-                    </div>
-                  )}
-                </>
-              )}
-            </fieldset>
           )}
         </div>
         {step === 3 && (
@@ -1253,7 +1427,10 @@ export function ZoneWorkspace({
                   `${run?.options?.conf ?? conf} / ${run?.options?.iou ?? iou}`,
                 ],
                 ["Thiết bị", run?.options?.device ?? device],
-                ["Text prompt", displayedClasses.join(", ")],
+                [
+                  promptMode ? "Text prompt YOLOE" : "Class cần đếm",
+                  displayedClasses.join(", "),
+                ],
                 [
                   "Vùng đếm",
                   displayedZones.map((region) => region.name).join(", "),

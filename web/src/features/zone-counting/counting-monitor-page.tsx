@@ -1,12 +1,13 @@
 "use client";
 
+import { supportsCounting } from "./counting-model";
+
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   ArrowRightIcon,
   CameraIcon,
-  Clock3Icon,
-  HeartPulseIcon,
   PlayIcon,
   RefreshCwIcon,
   Settings2Icon,
@@ -55,6 +56,9 @@ export function CountingMonitorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [controlsTarget, setControlsTarget] = useState<HTMLDivElement | null>(
+    null,
+  );
   useEffect(() => {
     const controller = new AbortController();
     async function allSources(kind: "stream" | "video") {
@@ -82,15 +86,7 @@ export function CountingMonitorPage() {
         const all = [...streams, ...videos];
         setSources(all);
         setProfiles(savedProfiles);
-        setModels(
-          library.filter(
-            (item) =>
-              item.familyId.startsWith("yoloe") &&
-              item.format === "pt" &&
-              ["ready", "manual"].includes(item.inspection.status) &&
-              ["detect", "segment"].includes(item.task ?? ""),
-          ),
-        );
+        setModels(library.filter(supportsCounting));
         let savedId = "";
         try {
           savedId = localStorage.getItem(profileSelectionKey) ?? "";
@@ -125,13 +121,12 @@ export function CountingMonitorPage() {
   const profile = profiles.find((item) => item.id === profileId);
   const source = sources.find((item) => item.id === profile?.source_id);
   return (
-    <WorkspacePage
-      title="Counting Monitor"
-      description="Theo dõi số đếm theo vùng."
-    >
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="w-full space-y-2 sm:w-80">
-          <Label htmlFor="monitor-profile">Cấu hình giám sát</Label>
+    <WorkspacePage title="Counting Monitor" hideHeading>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div className="w-full space-y-2 sm:w-72">
+          <Label htmlFor="monitor-profile" className="sr-only">
+            Cấu hình giám sát
+          </Label>
           <Select
             value={profileId}
             onValueChange={setProfileId}
@@ -151,11 +146,17 @@ export function CountingMonitorPage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div
+            ref={setControlsTarget}
+            className="flex flex-wrap items-center gap-2"
+          />
           <Button
             variant="outline"
             size="icon"
             aria-label="Làm mới cấu hình"
+            title="Làm mới cấu hình"
+            disabled={loading}
             onClick={() => setRevision((value) => value + 1)}
           >
             <RefreshCwIcon />
@@ -186,6 +187,7 @@ export function CountingMonitorPage() {
           profile={profile}
           source={source}
           models={models}
+          controlsTarget={controlsTarget}
         />
       ) : (
         <WorkspaceSection
@@ -218,7 +220,9 @@ function MonitorWorkspace({
   profile,
   source,
   models,
+  controlsTarget,
 }: {
+  controlsTarget: HTMLDivElement | null;
   profile: CountingProfile;
   source: VisionSource;
   models: StoredModel[];
@@ -261,8 +265,8 @@ function MonitorWorkspace({
   const live = source.kind === "stream";
   const currentData = Boolean(
     run?.counts?.valid &&
-    (!active || (!session.stale && !session.error)) &&
-    (!live || session.running),
+      (!active || (!session.stale && !session.error)) &&
+      (!live || session.running),
   );
   const counts = currentData ? run!.counts : null;
   const totals = regionTotals(
@@ -275,9 +279,9 @@ function MonitorWorkspace({
   const startModel = models.find((item) => item.id === settings?.model_id);
   const configured = Boolean(
     settings &&
-    savedConfiguration?.config?.zones.length &&
-    !savedConfiguration.stale &&
-    startModel,
+      savedConfiguration?.config &&
+      !savedConfiguration.stale &&
+      startModel,
   );
   const servicePhase = session.service?.runtime?.phase;
   const statusLabel =
@@ -312,62 +316,59 @@ function MonitorWorkspace({
     if (!configured || !settings || !configuration?.config) return;
     await session.start(() => startCountingProfile(profile.id));
   }
+  const controls = (
+    <div className="flex flex-wrap items-center gap-3">
+      <span
+        role="status"
+        className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${active && currentData ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}
+      >
+        <span
+          className={`size-1.5 rounded-full ${active && currentData ? "bg-emerald-500" : "bg-muted-foreground"}`}
+        />
+        {statusLabel}
+      </span>
+      {active ? (
+        <Button
+          variant="outline"
+          disabled={session.busy}
+          onClick={() => void session.stop()}
+        >
+          <SquareIcon />
+          {session.busy ? "Đang dừng…" : "Dừng AI"}
+        </Button>
+      ) : (
+        <Button
+          disabled={!configured || !session.ready || session.busy}
+          onClick={() => void start()}
+        >
+          <PlayIcon />
+          {session.busy
+            ? "Đang bắt đầu…"
+            : run
+              ? "Chạy lại"
+              : "Bắt đầu giám sát"}
+        </Button>
+      )}
+    </div>
+  );
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border bg-muted/40">
-            <CameraIcon className="size-5 text-primary" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold">{profile.name}</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {source.name} · {zones.length} vùng
-              {settings?.continuous ? " · Liên tục" : ""}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span
-            role="status"
-            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${active && currentData ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}
-          >
-            <span
-              className={`size-1.5 rounded-full ${active && currentData ? "bg-emerald-500" : "bg-muted-foreground"}`}
-            />
-            {statusLabel}
-          </span>
-          {active ? (
-            <Button
-              variant="outline"
-              disabled={session.busy}
-              onClick={() => void session.stop()}
-            >
-              <SquareIcon />
-              {session.busy ? "Đang dừng…" : "Dừng AI"}
-            </Button>
-          ) : (
-            <Button
-              disabled={!configured || !session.ready || session.busy}
-              onClick={() => void start()}
-            >
-              <PlayIcon />
-              {session.busy
-                ? "Đang bắt đầu…"
-                : run
-                  ? "Chạy lại"
-                  : "Bắt đầu giám sát"}
-            </Button>
-          )}
-        </div>
-      </div>
-      {(configError || session.error || run?.error || run?.counts?.reason) && (
+      {controlsTarget ? createPortal(controls, controlsTarget) : controls}
+      {(configError ||
+        session.error ||
+        run?.error ||
+        run?.counts?.reason ||
+        session.service?.runtime?.error) && (
         <div
           role="alert"
           className="space-y-3 rounded-lg border border-destructive/30 p-4 text-sm text-destructive"
         >
           <p>
-            {configError || session.error || run?.error || run?.counts?.reason}
+            {configError ||
+              session.error ||
+              run?.error ||
+              run?.counts?.reason ||
+              session.service?.runtime?.error}
           </p>
           {configError && (
             <Button
@@ -385,11 +386,9 @@ function MonitorWorkspace({
           <p className="text-sm text-muted-foreground">
             {configuration?.stale
               ? "Nguồn đã thay đổi. Cần vẽ lại vùng trước khi chạy."
-              : !configuration?.config?.zones.length
-                ? "Cấu hình chưa có vùng đếm."
-                : !settings
-                  ? "Chọn model và lưu thông số trước khi chạy."
-                  : "Model không còn khả dụng. Chọn lại model."}
+              : !settings
+                ? "Chọn model và lưu thông số trước khi chạy."
+                : "Model không còn khả dụng. Chọn lại model."}
           </p>
           <Button variant="outline" size="sm" asChild>
             <Link href="/counting/configure">
@@ -399,215 +398,223 @@ function MonitorWorkspace({
           </Button>
         </div>
       )}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.8fr)_minmax(15rem,1fr)]">
-        <WorkspaceSection
-          title="Quan sát"
-          titleId="monitor-preview-heading"
-          actions={
-            <span className="text-xs text-muted-foreground">
-              {live
-                ? connected
-                  ? "Preview đang phát"
-                  : "Chờ hình camera"
-                : source.fps
-                  ? `${source.fps} FPS nguồn`
-                  : "Video file"}
-            </span>
-          }
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+        <section
+          aria-labelledby="monitor-preview-heading"
+          className="min-w-0 space-y-3"
         >
-          <div className="space-y-4">
-            <CountingPreview
-              source={source}
-              run={run}
-              zones={zones}
-              selected={null}
-              draft={null}
-              editable={false}
-              boxes={preferences.boxes}
-              labels={preferences.labels}
-              segments={preferences.segments && model?.task === "segment"}
-              anchors={anchors}
-              showZones={showZones}
-              onSelect={noop}
-              onPoint={noop}
-              onMove={noop}
-              onDimensions={noop}
-              onConnection={setConnected}
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <h2
+              id="monitor-preview-heading"
+              className="truncate text-sm font-semibold"
+              title={source.name}
+            >
+              {source.name}
+            </h2>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {live ? (connected ? "Camera đang phát" : "Chờ camera") : "Video"}
+            </span>
+          </div>
+          <CountingPreview
+            source={source}
+            run={run}
+            zones={zones}
+            selected={null}
+            draft={null}
+            editable={false}
+            boxes={preferences.boxes}
+            labels={preferences.labels}
+            segments={preferences.segments && model?.task === "segment"}
+            anchors={anchors}
+            showZones={showZones}
+            showIdleHint={false}
+            onSelect={noop}
+            onPoint={noop}
+            onMove={noop}
+            onDimensions={noop}
+            onConnection={setConnected}
+          />
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="rounded-md bg-muted px-2 py-1">
+              {settings?.continuous
+                ? "24/7"
+                : live
+                  ? `${(settings?.duration_seconds ?? 3600) / 60} phút`
+                  : "Một lượt"}
+            </span>
+            <span>
+              {zones.length} vùng · {classes.length} class
+            </span>
+            {settings?.continuous && (
+              <span>· Tự khởi động {settings.auto_start ? "bật" : "tắt"}</span>
+            )}
+          </div>
+        </section>
+        <aside
+          className="min-w-0 space-y-5 rounded-xl border p-4"
+          aria-label="Hiển thị và thông số"
+        >
+          <OverlayControls
+            preferences={preferences}
+            onChange={update}
+            pose={false}
+            segment={model?.task === "segment"}
+            canConnect={false}
+            classify={false}
+            independentLabels
+            hideUnsupported
+            extraControls={[
+              {
+                id: "zones",
+                label: "Vùng đếm",
+                checked: showZones,
+                onChange: setShowZones,
+              },
+              {
+                id: "anchors",
+                label: "Điểm đếm",
+                checked: anchors,
+                onChange: setAnchors,
+              },
+            ]}
+          />
+          <dl className="space-y-3 border-t pt-4 text-xs">
+            {[
+              ["Model", model?.name ?? model?.filename ?? modelId ?? "—"],
+              [
+                "Confidence / IoU",
+                `${run?.options?.conf ?? settings?.options.conf ?? "—"} / ${run?.options?.iou ?? settings?.options.iou ?? "—"}`,
+              ],
+              [
+                "Thiết bị",
+                run?.result?.device ??
+                  (settings?.options.device === "auto"
+                    ? "Tự động"
+                    : (settings?.options.device ?? "—")),
+              ],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="flex min-w-0 items-start justify-between gap-3"
+              >
+                <dt className="shrink-0 text-muted-foreground">{label}</dt>
+                <dd className="min-w-0 break-all text-right font-medium">
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <section
+            className="space-y-3 border-t pt-4"
+            aria-label="Hiệu năng AI"
+          >
+            <h3 className="text-sm font-semibold">Hiệu năng AI</h3>
+            <RunMetrics
+              result={run?.result ?? null}
+              progress={run?.progress}
+              video
+              compact
             />
-            <p role="status" className="text-xs text-muted-foreground">
+          </section>
+        </aside>
+      </div>
+      <WorkspaceSection
+        title="Số đếm theo vùng"
+        titleId="monitor-counts-heading"
+        variant="plain"
+        toolbarLabel="Kết quả đếm"
+        toolbar={
+          <div className="flex w-full flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-semibold">Số đếm theo vùng</span>
+            <span role="status" className="text-xs text-muted-foreground">
               {counts
                 ? `${active ? "Mới nhất" : "Frame cuối"} · ${((counts.timestamp_ms ?? 0) / 1000).toFixed(2)}s`
-                : "Chưa có dữ liệu"}
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <caption className="sr-only">
-                  Số lượng từ kết quả AI theo từng vùng
-                </caption>
-                <thead>
-                  <tr className="border-b text-muted-foreground">
-                    <th className="py-3 text-left font-medium">Vùng</th>
-                    {classes.map((key) => (
-                      <th
-                        key={key}
-                        className="px-2 py-3 text-right font-medium whitespace-nowrap"
-                      >
-                        {countingClassLabel(key)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {zones.map((item) => {
-                    const row = counts?.regions.find(
-                      (row) => row.id === item.id,
-                    );
-                    return (
-                      <tr key={item.id} className="border-b last:border-0">
-                        <th className="py-3 text-left font-medium whitespace-nowrap">
-                          <span
-                            className="mr-2 inline-block size-2 rounded-full"
-                            style={{ background: item.color }}
-                          />
-                          {item.name}
-                        </th>
-                        {classes.map((key) => (
-                          <td
-                            key={key}
-                            className="px-2 py-3 text-right tabular-nums"
-                          >
-                            {item.classes.includes(key)
-                              ? (row?.counts[key] ?? "—")
-                              : "—"}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot className="border-t bg-muted/40 font-semibold">
-                  <tr>
-                    <th
-                      scope="row"
-                      className="py-3 text-left whitespace-nowrap"
-                    >
-                      Tổng cộng ({zones.length} vùng)
-                    </th>
-                    {classes.map((key, index) => (
-                      <td
-                        key={key}
-                        className="px-2 py-3 text-right tabular-nums"
-                      >
-                        {totals[index] ?? "—"}
-                      </td>
-                    ))}
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-            {!zones.length && (
-              <p className="text-sm text-muted-foreground">Chưa có vùng đếm.</p>
-            )}
-            <p className="text-xs leading-5 text-muted-foreground">
-              Đếm hiện diện, không cộng dồn. Vùng chồng nhau có thể đếm trùng.
-            </p>
+                : zones.length
+                  ? "Chưa có dữ liệu"
+                  : "Không đếm"}
+            </span>
           </div>
-        </WorkspaceSection>
-        <div className="space-y-6">
-          <section
-            className="rounded-xl border p-4 md:p-6"
-            aria-labelledby="service-health-heading"
+        }
+      >
+        {zones.length > 0 && (
+          <div
+            className="overflow-x-auto rounded-xl border"
+            role="region"
+            aria-label="Số đếm theo vùng"
+            tabIndex={0}
           >
-            <h2
-              id="service-health-heading"
-              className="flex items-center gap-2 text-sm font-semibold"
-            >
-              <HeartPulseIcon className="size-4 text-primary" />
-              Vận hành
-            </h2>
-            <dl className="mt-5 divide-y text-xs">
-              {[
-                [
-                  "Thời lượng lượt",
-                  settings?.continuous
-                    ? "Liên tục"
-                    : live
-                      ? `${(settings?.duration_seconds ?? 3600) / 60} phút`
-                      : "Đến hết video",
-                ],
-                ["Chạy nền", "Tiếp tục khi đóng trình duyệt"],
-                ["Tự khởi động", settings?.auto_start ? "Đã bật" : "Đã tắt"],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
-                >
-                  <dt className="text-muted-foreground">{label}</dt>
-                  <dd className="text-right font-medium">{value}</dd>
-                </div>
-              ))}
-            </dl>
-            <p className="mt-5 flex items-start gap-2 rounded-lg bg-muted p-3 text-xs leading-5 text-muted-foreground">
-              <Clock3Icon className="mt-0.5 size-4 shrink-0" />
-              {session.service?.runtime?.error ??
-                (settings?.continuous
-                  ? "Tự thử lại khi lỗi; nút Dừng tắt việc tự chạy lại."
-                  : live
-                    ? "Kết thúc khi hết thời lượng đã đặt."
-                    : "Video chạy một lượt, không tự lặp.")}
-            </p>
-          </section>
-          <section
-            className="space-y-4 rounded-xl border p-4 md:p-6"
-            aria-label="Tuỳ chọn hiển thị"
-          >
-            <OverlayControls
-              preferences={preferences}
-              onChange={update}
-              pose={false}
-              segment={model?.task === "segment"}
-              canConnect={false}
-              classify={false}
-              independentLabels
-              hideUnsupported
-              extraControls={[
-                {
-                  id: "zones",
-                  label: "Vùng đếm",
-                  checked: showZones,
-                  onChange: setShowZones,
-                },
-                {
-                  id: "anchors",
-                  label: "Điểm đếm",
-                  checked: anchors,
-                  onChange: setAnchors,
-                },
-              ]}
-            />
-          </section>
-        </div>
-      </div>
-      <details className="rounded-xl border p-4 md:p-6">
-        <summary className="cursor-pointer text-sm font-semibold">
-          Hiệu năng và thông số
-        </summary>
-        <div className="mt-6 space-y-4">
-          <RunMetrics
-            result={run?.result ?? null}
-            progress={run?.progress}
-            video
-          />
-          <p className="break-words text-xs text-muted-foreground">
-            Model: {run?.model_id ?? settings?.model_id ?? "—"} · Confidence{" "}
-            {run?.options?.conf ?? settings?.options.conf ?? "—"} · IoU{" "}
-            {run?.options?.iou ?? settings?.options.iou ?? "—"}
+            <table className="w-full text-sm">
+              <caption className="sr-only">
+                Số lượng từ kết quả AI theo từng vùng
+              </caption>
+              <thead>
+                <tr className="border-b text-muted-foreground">
+                  <th className="px-4 py-3 text-left font-medium">Vùng</th>
+                  {classes.map((key) => (
+                    <th
+                      key={key}
+                      className="px-2 py-3 text-right font-medium whitespace-nowrap"
+                    >
+                      {countingClassLabel(key)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {zones.map((item) => {
+                  const row = counts?.regions.find((row) => row.id === item.id);
+                  return (
+                    <tr key={item.id} className="border-b last:border-0">
+                      <th className="px-4 py-3 text-left font-medium whitespace-nowrap">
+                        <span
+                          className="mr-2 inline-block size-2 rounded-full"
+                          style={{ background: item.color }}
+                        />
+                        {item.name}
+                      </th>
+                      {classes.map((key) => (
+                        <td
+                          key={key}
+                          className="px-2 py-3 text-right tabular-nums"
+                        >
+                          {item.classes.includes(key)
+                            ? (row?.counts[key] ?? "—")
+                            : "—"}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot className="border-t bg-muted/40 font-semibold">
+                <tr>
+                  <th
+                    scope="row"
+                    className="px-4 py-3 text-left whitespace-nowrap"
+                  >
+                    Tổng cộng ({zones.length} vùng)
+                  </th>
+                  {classes.map((key, index) => (
+                    <td key={key} className="px-2 py-3 text-right tabular-nums">
+                      {totals[index] ?? "—"}
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+        {!zones.length && (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Chưa có vùng · chỉ nhận diện, không đếm.
           </p>
-          <p className="break-words text-xs text-muted-foreground">
-            Class: {classes.join(", ")}
+        )}
+        {zones.length > 0 && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Đếm theo từng frame; vùng chồng nhau tính riêng.
           </p>
-        </div>
-      </details>
+        )}
+      </WorkspaceSection>
     </>
   );
 }

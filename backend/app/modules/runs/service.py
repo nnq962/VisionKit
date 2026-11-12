@@ -19,6 +19,7 @@ from app.core.config import Settings
 from app.core.errors import SourceError
 from app.core.logs import run_context
 from app.core.rtsp import validate_rtsp_url
+from app.modules.counting.model_options import counting_options
 from app.modules.counting.schemas import CountingConfig
 from app.modules.counting.service import count_frame
 from app.modules.models.repository import timestamp
@@ -239,18 +240,12 @@ class RunService:
                     409, "Webcam này đang chạy AI. Dừng lượt hiện tại trước."
                 )
             model = self.models.available(model_id)
-            if counting is not None and (
-                kind not in {"video", "stream"}
-                or not counting.zones
-                or not model.variant.familyId.startswith("yoloe")
-                or model.variant.format != "pt"
-                or model.variant.task not in {"detect", "segment"}
-            ):
-                raise SourceError(
-                    422, "Đếm theo vùng cần model YOLOE .pt và video/RTSP hợp lệ."
-                )
+            if counting is not None and (kind not in {"video", "stream"}):
+                raise SourceError(422, "Cấu hình đếm chỉ hỗ trợ video/RTSP.")
             if model.inspection.status not in {"ready", "manual"}:
                 raise SourceError(409, "Đọc metadata model trước khi chạy.")
+            if counting is not None:
+                options = counting_options(model, counting, options)
             if model.variant.task not in {
                 "detect",
                 "pose",
@@ -483,7 +478,7 @@ class RunService:
                         "status": "completed" if completed else "running",
                         "result": result,
                         "counts": count_frame(result, record.counting)
-                        if record.counting
+                        if record.counting and record.counting.zones
                         else None,
                         "progress": event.get("progress"),
                         "completion_reason": "duration_limit"

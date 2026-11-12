@@ -1,19 +1,19 @@
 "use client";
 
+import { supportsCounting } from "./counting-model";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CheckIcon,
-  RefreshCwIcon,
   UploadIcon,
   BookmarkIcon,
   PlusIcon,
-  SearchIcon,
   CopyIcon,
   Trash2Icon,
-  SaveIcon,
+  EllipsisIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { VideoSourceInput } from "@/features/sources/components/video-source-input";
@@ -37,7 +37,13 @@ import {
 import type { VisionSource } from "@/features/sources/types";
 import { RtspCameraForm } from "@/features/sources/components/rtsp-camera-form";
 import { getLibrary, type StoredModel } from "@/features/models/api";
-import { SavedSourceItems } from "@/features/sources/components/saved-source-items";
+import { CountingSourcePicker } from "./counting-source-picker";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { SourceDetails } from "@/features/sources/components/source-details";
 import { ModelDetails } from "@/features/models/components/model-details";
 import { ModelLibraryPicker } from "@/features/models/components/model-library-picker";
@@ -51,9 +57,10 @@ import { profileSelectionKey, type CountingProfile } from "./types";
 import { useUnsavedChanges } from "./use-unsaved-changes";
 import { ZoneWorkspace, type CountingEditorHandle } from "./zone-workspace";
 
-const steps = [
-  "Chọn nguồn",
-  "Chọn model",
+const steps = ["Nguồn", "Model", "Vùng và thông số", "Kết quả"];
+const headings = [
+  "Nguồn đầu vào",
+  "Model nhận diện",
   "Vùng và thông số",
   "Chạy và kết quả",
 ];
@@ -66,7 +73,9 @@ export function CountingPage({
   configureOnly?: boolean;
 }) {
   const editor = useRef<CountingEditorHandle>(null);
-  const visibleSteps = configureOnly ? steps.slice(0, 3) : steps;
+  const visibleSteps = configureOnly
+    ? ["Nguồn", "Model", "Vùng đếm", "Thông số & 24/7"]
+    : steps;
   const [step, setStep] = useState(0);
   const restoreRun = useCallback(
     () => setStep(configureOnly ? 2 : 3),
@@ -234,13 +243,7 @@ export function CountingPage({
           listCountingProfiles(controller.signal),
         ]);
         if (controller.signal.aborted) return;
-        const eligible = library.filter(
-          (item) =>
-            item.familyId.startsWith("yoloe") &&
-            item.format === "pt" &&
-            ["ready", "manual"].includes(item.inspection.status) &&
-            ["detect", "segment"].includes(item.task ?? ""),
-        );
+        const eligible = library.filter(supportsCounting);
         setProfiles(savedProfiles);
         setSources([...videos, ...cameras]);
         setModels(eligible);
@@ -324,6 +327,12 @@ export function CountingPage({
       (sourceFilter === "all" || item.kind === sourceFilter) &&
       item.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
   );
+  function changeSource(nextId: string) {
+    if (nextId === sourceId) return;
+    setWorkspaceDirty(false);
+    setNewTouched(true);
+    setSourceId(nextId);
+  }
   async function upload() {
     if (!file || busy || locked) return;
     setBusy(true);
@@ -341,7 +350,7 @@ export function CountingPage({
         fileName || file.name,
       );
       setSources((items) => [saved, ...items]);
-      setSourceId(saved.id);
+      changeSource(saved.id);
       setSourceMode("saved");
       setFile(null);
       setFileName("");
@@ -356,109 +365,132 @@ export function CountingPage({
   return (
     <WorkspacePage
       title={configureOnly ? "Counting Configuration" : "Zone Counting"}
+      hideHeading={configureOnly}
       description={
         configureOnly
           ? "Thiết lập nguồn, model và vùng đếm."
-          : "Đếm hiện diện các class YOLOE trong vùng trên video hoặc camera RTSP."
+          : "Đếm đối tượng trong vùng trên video hoặc camera RTSP."
       }
     >
       {dialog}
       {configureOnly && (
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="counting-profile">Cấu hình đã lưu</Label>
-            <Select
-              value={profileId ?? "new"}
-              onValueChange={(id) => {
-                if (id !== (profileId ?? "new"))
-                  confirmDiscard(() => openProfile(id));
-              }}
-              disabled={locked || loading || busy}
-            >
-              <SelectTrigger id="counting-profile" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="new">+ Tạo cấu hình mới</SelectItem>
-                  {profiles.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+        <section
+          aria-label="Quản lý cấu hình"
+          className="space-y-4 rounded-xl border bg-muted/20 p-4 md:p-6"
+        >
+          <div className="grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <div className="space-y-2">
+              <Label htmlFor="counting-profile">Cấu hình đã lưu</Label>
+              <Select
+                value={profileId ?? "new"}
+                onValueChange={(id) => {
+                  if (id !== (profileId ?? "new"))
+                    confirmDiscard(() => openProfile(id));
+                }}
+                disabled={locked || loading || busy}
+              >
+                <SelectTrigger id="counting-profile" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="new">+ Tạo cấu hình mới</SelectItem>
+                    {profiles.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="counting-profile-name">Tên cấu hình</Label>
+              <Input
+                id="counting-profile-name"
+                value={profileName}
+                maxLength={100}
+                disabled={locked || loading}
+                onChange={(event) => {
+                  setNewTouched(true);
+                  setProfileName(event.target.value);
+                }}
+                placeholder="Ví dụ: Cấu hình 1"
+              />
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-2 lg:col-span-1">
+              <Button
+                variant="outline"
+                disabled={!profileId}
+                asChild={Boolean(profileId)}
+              >
+                {profileId ? (
+                  <Link href="/counting/monitor">
+                    Mở giám sát <ArrowRightIcon />
+                  </Link>
+                ) : (
+                  <span>Mở giám sát</span>
+                )}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Thao tác cấu hình"
+                    disabled={locked || loading || busy}
+                  >
+                    <EllipsisIcon />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-44">
+                  <DropdownMenuItem
+                    onSelect={() => confirmDiscard(() => selectProfile(null))}
+                  >
+                    <PlusIcon />
+                    Tạo cấu hình mới
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!profileId}
+                    onSelect={() =>
+                      confirmDiscard(() => void duplicateProfile())
+                    }
+                  >
+                    <CopyIcon />
+                    Nhân bản
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={!profileId}
+                    onSelect={() =>
+                      ask({
+                        title: "Xoá cấu hình?",
+                        description: `Xoá “${selectedSaved?.name ?? profileName}”. Bạn có thể hoàn tác sau khi xoá.`,
+                        label: "Xoá cấu hình",
+                        action: () => void removeProfile(),
+                      })
+                    }
+                  >
+                    <Trash2Icon />
+                    Xoá cấu hình
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="counting-profile-name">Tên cấu hình</Label>
-            <Input
-              id="counting-profile-name"
-              value={profileName}
-              maxLength={100}
-              disabled={locked || loading}
-              onChange={(event) => {
-                setNewTouched(true);
-                setProfileName(event.target.value);
-              }}
-              placeholder="Ví dụ: Cấu hình 1"
+          <p
+            role="status"
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+          >
+            <span
+              className={`size-1.5 rounded-full ${workspaceDirty || selectionDirty ? "bg-amber-500" : profileId ? "bg-success" : "bg-muted-foreground"}`}
             />
-          </div>
-          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-            <Button
-              disabled={
-                locked || loading || busy || !source || !model ||
-                sourceMode === "new" || !profileName.trim() ||
-                (Boolean(profileId) && !workspaceDirty && !selectionDirty)
-              }
-              onClick={() => void editor.current?.save()}
-            >
-              <SaveIcon /> {locked ? "Đang xử lý…" : "Lưu cấu hình"}
-            </Button>
-            <span role="status" className="text-sm text-muted-foreground">
-              {workspaceDirty || selectionDirty
-                ? "Chưa lưu"
-                : profileId ? "Đã lưu" : "Cấu hình mới"}
-            </span>
-            {profileId ? (
-              <Button variant="outline" asChild>
-                <Link href="/counting/monitor">
-                  Mở giám sát
-                  <ArrowRightIcon />
-                </Link>
-              </Button>
-            ) : (
-              <Button variant="outline" disabled>
-                Mở giám sát
-                <ArrowRightIcon />
-              </Button>
-            )}
-            {profileId && (
-              <>
-                <Button
-                  variant="outline"
-                  disabled={locked || loading || busy}
-                  onClick={() => confirmDiscard(() => void duplicateProfile())}
-                >
-                  <CopyIcon /> Nhân bản
-                </Button>
-                <Button
-                  variant="destructive"
-                  disabled={locked || loading || busy}
-                  onClick={() =>
-                    ask({
-                      title: "Xoá cấu hình?",
-                      description: `Xoá “${selectedSaved?.name ?? profileName}”. Bạn có thể hoàn tác sau khi xoá.`,
-                      label: "Xoá cấu hình",
-                      action: () => void removeProfile(),
-                    })
-                  }
-                >
-                  <Trash2Icon /> Xoá
-                </Button>
-              </>
-            )}
-          </div>
+            {workspaceDirty || selectionDirty
+              ? "Có thay đổi chưa lưu"
+              : profileId
+                ? "Đã lưu cấu hình"
+                : "Cấu hình mới"}
+          </p>
           {managementError && (
             <p role="alert" className="text-sm text-destructive sm:col-span-2">
               {managementError}
@@ -480,181 +512,165 @@ export function CountingPage({
               </Button>
             </div>
           )}
-        </div>
+        </section>
       )}
-      <ol
-        aria-label="Các bước thiết lập"
-        className={`grid grid-cols-2 gap-3 ${configureOnly ? "sm:grid-cols-3" : "sm:grid-cols-4"}`}
-      >
-        {visibleSteps.map((title, index) => (
-          <li
-            key={title}
-            aria-current={step === index ? "step" : undefined}
-            className={`flex items-center gap-2 border-b-2 pb-3 text-sm ${step === index ? "border-primary font-semibold" : "border-border text-muted-foreground"}`}
-          >
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={busy || loading || locked || (index > 0 && (!source || sourceMode === "new")) || (index > 1 && !model) || (!configureOnly && index > step)}
-              onClick={() => setStep(index)}
-            >
-              <span className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${step === index ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                {step > index ? <CheckIcon className="size-3" /> : index + 1}
-              </span>
-              {title}
-            </button>
-          </li>
-        ))}
-      </ol>
+      <nav aria-label="Thiết lập đếm vùng">
+        <ol className="grid grid-cols-4 gap-1 sm:gap-2">
+          {visibleSteps.map((title, index) => {
+            const current = step === index;
+            const ready =
+              index === 0
+                ? Boolean(source) && sourceMode === "saved"
+                : index === 1
+                  ? Boolean(model)
+                  : false;
+            const summary =
+              index === 0
+                ? (source?.name ?? "Video hoặc camera RTSP")
+                : index === 1
+                  ? (model?.name ??
+                    model?.filename ??
+                    "Chọn model YOLO / YOLOE")
+                  : index === 2
+                    ? "Vẽ vùng và chọn đối tượng"
+                    : configureOnly
+                      ? "Ngưỡng và chế độ chạy"
+                      : "Xem kết quả";
+            return (
+              <li key={title} className="min-w-0">
+                <button
+                  type="button"
+                  aria-current={current ? "step" : undefined}
+                  aria-label={title}
+                  disabled={
+                    busy ||
+                    loading ||
+                    locked ||
+                    (index > 0 && (!source || sourceMode === "new")) ||
+                    (index > 1 && !model) ||
+                    (!configureOnly && index > step)
+                  }
+                  onClick={() => setStep(index)}
+                  className={`flex w-full min-w-0 items-center justify-center gap-2 rounded-lg px-2 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-45 sm:justify-start sm:px-3 ${current ? "bg-primary/8 text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                >
+                  <span
+                    className={`hidden size-7 shrink-0 items-center justify-center rounded-full text-xs font-medium sm:flex ${current ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}
+                  >
+                    {ready && !current ? (
+                      <CheckIcon className="size-3.5" />
+                    ) : (
+                      index + 1
+                    )}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold sm:text-sm">
+                      {title}
+                    </span>
+                    <span
+                      className="mt-0.5 hidden truncate text-xs text-muted-foreground lg:block"
+                      title={summary}
+                    >
+                      {summary}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
       {step < 2 && (
         <WorkspaceSection
-          title={steps[step]}
+          title={headings[step]}
           titleId="counting-source-heading"
-          actions={
-            <>
-              <Button
-                variant="outline"
-                disabled={step === 0 || busy || loading || locked}
-                onClick={() => setStep(0)}
-              >
-                <ArrowLeftIcon /> Quay lại
-              </Button>
-              <Button
-                disabled={
-                  busy ||
-                  loading ||
-                  locked ||
-                  (step === 0 ? !source || sourceMode === "new" : !model)
-                }
-                onClick={() => setStep(step + 1)}
-              >
-                Tiếp tục <ArrowRightIcon />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label="Làm mới danh sách"
-                disabled={busy || locked}
-                onClick={() => setRevision((value) => value + 1)}
-              >
-                <RefreshCwIcon />
-              </Button>
-            </>
+          variant="plain"
+          showHeader={false}
+          toolbarLabel="Thao tác thiết lập đếm vùng"
+          toolbar={
+            <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
+              <span className="text-sm font-semibold">{headings[step]}</span>
+              <div className="flex items-center gap-2">
+                {step > 0 && (
+                  <Button
+                    variant="ghost"
+                    disabled={busy || loading || locked}
+                    onClick={() => setStep(0)}
+                  >
+                    <ArrowLeftIcon />
+                    Quay lại
+                  </Button>
+                )}
+                <Button
+                  size="lg"
+                  className="min-w-36"
+                  disabled={
+                    busy ||
+                    loading ||
+                    locked ||
+                    (step === 0 ? !source || sourceMode === "new" : !model)
+                  }
+                  onClick={() => setStep(step + 1)}
+                >
+                  <ArrowRightIcon />
+                  {step === 0 ? "Chọn model" : "Thiết lập vùng"}
+                </Button>
+              </div>
+            </div>
           }
         >
           <div className="space-y-6">
-            {step === 0 && (
-              <div
-                className="flex flex-wrap gap-2"
-                role="group"
-                aria-label="Cách chọn source"
-              >
-                <Button
-                  variant={sourceMode === "new" ? "secondary" : "ghost"}
-                  aria-pressed={sourceMode === "new"}
-                  disabled={busy || locked}
-                  onClick={() => setSourceMode("new")}
-                >
-                  <PlusIcon /> Nguồn mới
-                </Button>
-                <Button
-                  variant={sourceMode === "saved" ? "secondary" : "ghost"}
-                  aria-pressed={sourceMode === "saved"}
-                  disabled={busy || locked}
-                  onClick={() => setSourceMode("saved")}
-                >
-                  <BookmarkIcon /> Đã lưu ({sources.length})
-                </Button>
-              </div>
-            )}
-            {step === 1 && (
-              <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" aria-pressed>
-                  <BookmarkIcon /> Đã có ({models.length})
-                </Button>
-                <Button variant="ghost" asChild>
-                  <Link href="/models">
-                    <UploadIcon /> Thêm model
-                  </Link>
-                </Button>
-              </div>
-            )}
             <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-              <div className="min-w-0 space-y-6">
-                {step === 0 && sourceMode === "saved" && (
-                  <div className="space-y-6">
-                    <div
-                      className="flex flex-wrap gap-1.5"
-                      role="group"
-                      aria-label="Phân loại source đã lưu"
-                    >
-                      {[
-                        ["all", "Tất cả"],
-                        ["video", "Video"],
-                        ["stream", "Camera RTSP"],
-                      ].map(([value, label]) => (
-                        <Button
-                          key={value}
-                          size="sm"
-                          variant={
-                            sourceFilter === value ? "secondary" : "ghost"
-                          }
-                          aria-pressed={sourceFilter === value}
-                          onClick={() => setSourceFilter(value)}
-                        >
-                          {label}
-                        </Button>
-                      ))}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="counting-source-search">Tìm nguồn</Label>
-                      <div className="relative">
-                        <SearchIcon className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
-                        <Input
-                          className="h-9 pl-9"
-                          maxLength={120}
-                          id="counting-source-search"
-                          value={search}
-                          onChange={(event) => setSearch(event.target.value)}
-                          placeholder="Tìm theo tên…"
-                        />
-                      </div>
-                    </div>
-                    <SavedSourceItems
-                      items={filteredSources}
-                      selectedId={sourceId}
+              <div className="min-w-0 space-y-4">
+                {step === 0 && (
+                  <div
+                    className="inline-flex max-w-full flex-wrap gap-1 rounded-lg bg-muted/60 p-1"
+                    role="group"
+                    aria-label="Cách chọn nguồn"
+                  >
+                    <Button
+                      variant={sourceMode === "new" ? "outline" : "ghost"}
+                      aria-pressed={sourceMode === "new"}
                       disabled={busy || locked}
-                      onSelect={(item) => {
-                        if (item.id !== sourceId)
-                          confirmDiscard(() => {
-                            setNewTouched(true);
-                            setSourceId(item.id);
-                          });
-                      }}
-                    />
-                    {!filteredSources.length && !loading && (
-                      <p className="py-10 text-center text-sm text-muted-foreground">
-                        {search
-                          ? "Không tìm thấy nguồn."
-                          : sourceFilter !== "all"
-                            ? "Chưa có nguồn thuộc loại này."
-                            : "Chưa có nguồn. Chọn Nguồn mới để thêm."}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-3">
-                      <p className="text-xs text-muted-foreground">
-                        {filteredSources.length}/{sources.length} source.
-                      </p>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={loading || busy || locked}
-                        onClick={() => setRevision((value) => value + 1)}
-                      >
-                        Làm mới
-                      </Button>
-                    </div>
+                      onClick={() => setSourceMode("new")}
+                    >
+                      <PlusIcon /> Nguồn mới
+                    </Button>
+                    <Button
+                      variant={sourceMode === "saved" ? "outline" : "ghost"}
+                      aria-pressed={sourceMode === "saved"}
+                      disabled={busy || locked}
+                      onClick={() => setSourceMode("saved")}
+                    >
+                      <BookmarkIcon /> Thư viện ({sources.length})
+                    </Button>
                   </div>
+                )}
+                {step === 1 && (
+                  <div className="inline-flex max-w-full flex-wrap gap-1 rounded-lg bg-muted/60 p-1">
+                    <Button variant="outline" aria-pressed>
+                      <BookmarkIcon /> Thư viện ({models.length})
+                    </Button>
+                    <Button variant="ghost" asChild>
+                      <Link href="/models">
+                        <UploadIcon /> Thêm model
+                      </Link>
+                    </Button>
+                  </div>
+                )}
+                {step === 0 && sourceMode === "saved" && (
+                  <CountingSourcePicker
+                    items={filteredSources}
+                    total={sources.length}
+                    selectedId={sourceId}
+                    search={search}
+                    filter={sourceFilter}
+                    loading={loading}
+                    disabled={busy || locked}
+                    onSearch={setSearch}
+                    onFilter={setSourceFilter}
+                    onRefresh={() => setRevision((value) => value + 1)}
+                    onSelect={(item) => changeSource(item.id)}
+                  />
                 )}
                 {step === 1 && (
                   <>
@@ -752,7 +768,7 @@ export function CountingPage({
                           try {
                             const saved = await configureRtspSource(name, url);
                             setSources((items) => [saved, ...items]);
-                            setSourceId(saved.id);
+                            changeSource(saved.id);
                             setSourceMode("saved");
                             return true;
                           } catch (reason) {
@@ -767,14 +783,17 @@ export function CountingPage({
                   </div>
                 )}
               </div>
-              {step === 0 ? (
-                <SourceDetails
-                  source={sourceMode === "saved" ? source : null}
-                  emptyKind={newSourceKind === "stream" ? "stream" : "video"}
-                />
-              ) : (
-                <ModelDetails model={model} />
-              )}
+              <div className="min-w-0 lg:sticky lg:top-6" aria-live="polite">
+                {step === 0 ? (
+                  <SourceDetails
+                    compact
+                    source={sourceMode === "saved" ? source : null}
+                    emptyKind={newSourceKind === "stream" ? "stream" : "video"}
+                  />
+                ) : (
+                  <ModelDetails compact model={model} />
+                )}
+              </div>
             </div>
             {loading && (
               <p role="status" className="text-sm text-muted-foreground">

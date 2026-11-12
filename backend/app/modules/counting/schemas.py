@@ -41,7 +41,7 @@ ClassName = Annotated[
 ]
 ClassNames = Annotated[
     list[ClassName],
-    Field(min_length=1, max_length=80),
+    Field(min_length=1, max_length=10000),
     AfterValidator(validate_class_names),
 ]
 
@@ -93,8 +93,10 @@ class CountingConfig(BaseModel):
 
     @model_validator(mode="after")
     def known_zone_classes(self) -> "CountingConfig":
-        """Đảm bảo mỗi class được đếm thuộc danh sách prompt của cấu hình lượt chạy."""
+        """Đảm bảo mỗi class trong vùng thuộc danh sách class của cấu hình lượt chạy."""
         known = set(self.classes)
         if any(not set(zone.classes).issubset(known) for zone in self.zones):
-            raise ValueError("Class trong vùng phải thuộc danh sách class YOLOE.")
+            raise ValueError(
+                "Class trong vùng phải thuộc danh sách class của cấu hình."
+            )
         return self

@@ -31,6 +31,7 @@ export function CountingPreview({
   segments,
   anchors,
   showZones = true,
+  showIdleHint = true,
   onSelect,
   onPoint,
   onMove,
@@ -49,6 +50,7 @@ export function CountingPreview({
   segments: boolean;
   anchors: boolean;
   showZones?: boolean;
+  showIdleHint?: boolean;
   onSelect: (id: string) => void;
   onPoint: (point: Point) => void;
   onMove: (id: string, index: number, point: Point) => void;
@@ -311,7 +313,9 @@ export function CountingPreview({
                           stroke={zone.color}
                           strokeWidth={2}
                           className="cursor-move"
-                          style={{ pointerEvents: canInteract ? "auto" : "none" }}
+                          style={{
+                            pointerEvents: canInteract ? "auto" : "none",
+                          }}
                           onPointerDown={(event) => {
                             event.stopPropagation();
                             dragging.current = { id: zone.id, index };
@@ -409,7 +413,7 @@ export function CountingPreview({
             Dừng preview
           </button>
         </div>
-      ) : (
+      ) : showIdleHint || result ? (
         <p className="text-xs text-muted-foreground">
           {result
             ? playVideo
@@ -419,7 +423,7 @@ export function CountingPreview({
               ? "Chọn khung hình → Vẽ vùng."
               : "Kiểm tra vùng trước khi chạy."}
         </p>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -293,3 +293,59 @@ test("profile management and stopping call dedicated durable service endpoints",
     globalThis.fetch = original;
   }
 });
+
+test("counting supports fixed-label YOLO and keeps text prompts exclusive to YOLOE PT", async () => {
+  const {
+    supportsCounting,
+    usesCountingPrompts,
+    countingModelClasses,
+    reconcileCountingClasses,
+  } = await import("../src/features/zone-counting/counting-model.ts");
+  const model = {
+    familyId: "yolo26",
+    format: "pt",
+    task: "detect",
+    inspection: {
+      status: "ready",
+      metadata: { names: { 7: "truck", 0: "person", 2: "car" } },
+    },
+  };
+  assert.equal(supportsCounting(model), true);
+  assert.equal(supportsCounting({ ...model, format: "onnx" }), true);
+  assert.equal(usesCountingPrompts(model), false);
+  assert.deepEqual(countingModelClasses(model), ["person", "car", "truck"]);
+  assert.deepEqual(
+    reconcileCountingClasses(
+      ["wheelchair", "person"],
+      countingModelClasses(model),
+    ),
+    ["person"],
+  );
+  assert.deepEqual(
+    reconcileCountingClasses(["hospital bed"], countingModelClasses(model)),
+    ["person", "car", "truck"],
+  );
+  const yoloe = {
+    ...model,
+    familyId: "yoloe26",
+    inspection: { status: "manual", metadata: null },
+  };
+  assert.equal(supportsCounting(yoloe), true);
+  assert.equal(usesCountingPrompts(yoloe), true);
+  assert.equal(supportsCounting({ ...yoloe, format: "onnx" }), false);
+  assert.equal(supportsCounting({ ...model, task: "classify" }), false);
+  assert.equal(
+    supportsCounting({
+      ...model,
+      inspection: { status: "ready", metadata: null },
+    }),
+    false,
+  );
+  assert.equal(
+    reconcileCountingClasses(
+      [],
+      Array.from({ length: 100 }, (_, id) => `class ${id}`),
+    ).length,
+    100,
+  );
+});

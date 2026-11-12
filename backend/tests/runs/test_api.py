@@ -531,7 +531,12 @@ class RunTests(unittest.TestCase):
             ).status_code,
             409,
         )
-        self.assertEqual(self.client.post(f"{base}/{first_id}/runs").status_code, 422)
+        regular = self.client.post(f"{base}/{first_id}/runs")
+        self.assertEqual(regular.status_code, 202, regular.text)
+        regular_run = self.wait(regular.json()["id"])
+        self.assertEqual(regular_run["status"], "completed", regular_run)
+        self.assertEqual(regular_run["options"]["classes"], [0])
+        self.assertIsNone(regular_run["options"]["text_prompts"])
         self.app.state.models.repository.configure(self.model_id, "yoloe", "segment")
         self.delay = 0.3
         started = self.client.post(f"{base}/{first_id}/runs")
@@ -576,6 +581,98 @@ class RunTests(unittest.TestCase):
             )
         self.assertTrue(self.client.get(f"{base}/{first_id}").json()["stale"])
         self.assertEqual(self.client.post(f"{base}/{first_id}/runs").status_code, 409)
+
+    def test_regular_yolo_counting_uses_metadata_ids_and_rejects_unknown_labels(
+        self,
+    ) -> None:
+        """YOLO đếm nhãn cố định bằng class ID; không gửi prompt hoặc nhận nhãn tự nhập."""
+        from uuid import uuid4
+
+        from app.modules.models.schemas import ModelInspection
+
+        self.app.state.models.repository.set_inspection(
+            self.model_id,
+            ModelInspection(
+                status="ready",
+                metadata={
+                    "format": "pt",
+                    "family": "yolo",
+                    "task": "detect",
+                    "names": {"0": "person", "7": "truck"},
+                },
+            ),
+        )
+        source = self.client.post(
+            "/api/v1/sources/upload",
+            data={"kind": "video", "name": "YOLO video"},
+            files={"file": ("clip.mp4", video_bytes())},
+        ).json()
+        signature = self.client.get(f"/api/v1/counting/sources/{source['id']}").json()[
+            "source_signature"
+        ]
+        config = {
+            "classes": ["truck"],
+            "reference_width": 160,
+            "reference_height": 90,
+            "zones": [
+                {
+                    "id": str(uuid4()),
+                    "name": "A",
+                    "classes": ["truck"],
+                    "points": [[0, 0], [1, 0], [1, 1], [0, 1]],
+                }
+            ],
+        }
+        self.video_detections = [
+            {"label": "truck", "bbox": [10, 10, 40, 80]},
+            {"label": "person", "bbox": [10, 10, 40, 80]},
+        ]
+        body = {
+            "source_id": source["id"],
+            "source_signature": signature,
+            "model_id": self.model_id,
+            "config": config,
+            "options": {"text_prompts": ["wheelchair"], "classes": [0]},
+        }
+        created = self.client.post("/api/v1/counting/runs", json=body)
+        self.assertEqual(created.status_code, 202, created.text)
+        run = self.wait(created.json()["id"])
+        self.assertEqual(run["status"], "completed", run)
+        self.assertEqual(run["counts"]["regions"][0]["counts"], {"truck": 1})
+        self.assertEqual(self.inference_payloads[-1]["family"], "yolo")
+        self.assertEqual(self.inference_payloads[-1]["options"]["classes"], [7])
+        self.assertIsNone(self.inference_payloads[-1]["options"]["text_prompts"])
+        profile = self.client.post(
+            "/api/v1/counting/profiles",
+            json={
+                "name": "Recognition only",
+                "source_id": source["id"],
+                "source_signature": signature,
+                "config": {**config, "zones": []},
+                "monitor": {"model_id": self.model_id},
+            },
+        )
+        self.assertEqual(profile.status_code, 201, profile.text)
+        endpoint = f"/api/v1/counting/profiles/{profile.json()['id']}"
+        created = self.client.post(f"{endpoint}/runs")
+        self.assertEqual(created.status_code, 202, created.text)
+        no_regions = self.wait(created.json()["id"])
+        self.assertEqual(no_regions["status"], "completed", no_regions)
+        self.assertIsNone(no_regions["counts"])
+        self.assertEqual(len(no_regions["result"]["detections"]), 2)
+        self.assertEqual(self.client.get(endpoint).json()["config"]["zones"], [])
+        bad = {
+            **config,
+            "classes": ["wheelchair"],
+            "zones": [{**config["zones"][0], "classes": ["wheelchair"]}],
+        }
+        rejected = self.client.post(
+            "/api/v1/counting/runs", json={**body, "config": bad}
+        )
+        self.assertEqual(rejected.status_code, 422, rejected.text)
+        self.app.state.models.repository.configure(self.model_id, "yolo", "classify")
+        rejected = self.client.post("/api/v1/counting/runs", json=body)
+        self.assertEqual(rejected.status_code, 422, rejected.text)
 
     def test_counting_video_snapshot_persistence_and_model_validation(self) -> None:
         """Lưu vùng theo nguồn, snapshot run và không gửi cấu hình đếm sang AI."""
@@ -646,12 +743,15 @@ class RunTests(unittest.TestCase):
             self.assertTrue(
                 reopened.get(f"/api/v1/runs/{run_id}").json()["counts"]["valid"]
             )
-        self.assertEqual(
-            self.client.post(
-                "/api/v1/counting/runs", json={**body, "config": changed}
-            ).status_code,
-            422,
+        no_regions = self.client.post(
+            "/api/v1/counting/runs", json={**body, "config": changed}
         )
+        self.assertEqual(no_regions.status_code, 202, no_regions.text)
+        no_regions_run = self.wait(no_regions.json()["id"])
+        self.assertEqual(no_regions_run["status"], "completed", no_regions_run)
+        self.assertIsNone(no_regions_run["counts"])
+        self.assertIsNotNone(no_regions_run["result"])
+
         self.assertEqual(
             self.client.put(
                 endpoint, json={**payload, "source_signature": "a" * 64}
