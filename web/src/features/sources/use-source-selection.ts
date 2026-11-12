@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createUuid } from "@/lib/uuid";
 import { useVideoStreamStore } from "@/features/video-stream/video-stream-provider";
 import { useSourceLibrary } from "./use-source-library";
 import { useSourceDrafts } from "./use-source-drafts";
@@ -82,7 +83,7 @@ export function useSourceSelectionState() {
         ? /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif)$/i
         : /\.(mp4|webm|mov|m4v|ogv)$/i;
     const base: VisionSource = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       kind,
       name: file.name,
       location: file.name,
@@ -189,7 +190,7 @@ export function useSourceSelectionState() {
   async function openCamera(deviceIndex = source?.deviceIndex ?? 0) {
     const previous = source?.kind === "webcam" && source.deviceIndex === deviceIndex ? source : null;
     const base: VisionSource = {
-      id: previous?.id ?? crypto.randomUUID(), kind: "webcam", name: `Webcam ${deviceIndex} · máy AI`,
+      id: previous?.id ?? createUuid(), kind: "webcam", name: `Webcam ${deviceIndex} · máy AI`,
       location: String(deviceIndex), deviceIndex, status: "loading", format: "Webcam local",
     };
     begin(base);
@@ -203,7 +204,7 @@ export function useSourceSelectionState() {
 
   async function captureScreen() {
     const base: VisionSource = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       kind: "screen",
       name: "Ảnh màn hình",
       location: "screen-capture",
@@ -289,7 +290,7 @@ export function useSourceSelectionState() {
 
   async function selectYoutube(location: string) {
     const previous = source?.kind === "youtube" ? source.youtubeSession : undefined;
-    const next: VisionSource = { id: crypto.randomUUID(), kind: "youtube", name: "YouTube", location, status: "loading", format: "YouTube" };
+    const next: VisionSource = { id: createUuid(), kind: "youtube", name: "YouTube", location, status: "loading", format: "YouTube" };
     begin(next);
     try {
       if (previous) await deleteYoutube(previous);
@@ -357,7 +358,7 @@ export function useSourceSelectionState() {
     if (source?.streamPreview && !source.saved) videoStreams.discardTemporary(source.id);
     const address = new URL(url);
     const next: VisionSource = {
-      id: crypto.randomUUID(), kind: "stream", name: name.trim() || "Camera RTSP",
+      id: createUuid(), kind: "stream", name: name.trim() || "Camera RTSP",
       location: `${address.protocol}//${address.host}${address.pathname}`,
       status: "pending", saved: false, streamPreview: true,
       format: address.protocol.slice(0, -1).toUpperCase(),

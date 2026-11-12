@@ -349,3 +349,19 @@ test("counting supports fixed-label YOLO and keeps text prompts exclusive to YOL
     100,
   );
 });
+
+test("LAN HTTP creates valid UUIDs without the secure-context randomUUID API", async () => {
+  const { createUuid } = await import("../src/lib/uuid.ts");
+  const insecureCrypto = { getRandomValues: (bytes) => bytes.fill(255) };
+  assert.equal(
+    createUuid(insecureCrypto),
+    "ffffffff-ffff-4fff-bfff-ffffffffffff",
+  );
+  const ids = Array.from({ length: 100 }, () => createUuid());
+  assert.equal(new Set(ids).size, 100);
+  for (const id of ids)
+    assert.match(
+      id,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+});

@@ -1,5 +1,7 @@
 "use client";
 
+import { createUuid } from "@/lib/uuid";
+
 import {
   useCallback,
   useEffect,
@@ -314,7 +316,7 @@ export function ZoneWorkspace({
       return;
     }
     const next: CountingZone = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       name: `Vùng ${zones.length + 1}`,
       color: colors[zones.length % colors.length],
       points: draft,
@@ -821,6 +823,7 @@ export function ZoneWorkspace({
             ) : (
               <>
                 <Button
+                  type="button"
                   size="sm"
                   disabled={draft.length < 3}
                   onClick={finishDraft}
@@ -846,6 +849,9 @@ export function ZoneWorkspace({
                 >
                   Huỷ nét vẽ
                 </Button>
+                <span className="self-center text-xs text-muted-foreground">
+                  {draft.length} đỉnh
+                </span>
               </>
             )}
             {!configureOnly && (
@@ -860,6 +866,11 @@ export function ZoneWorkspace({
               </Button>
             )}
           </div>
+        )}
+        {draft !== null && error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
         )}
         <CountingPreview
           key={source.id}

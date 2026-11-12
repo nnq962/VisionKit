@@ -71,7 +71,15 @@ export function CountingPreview({
   const [syncedFrame, setSyncedFrame] = useState<number | string | null>(null);
   const positionedRun = useRef<string | null>(null);
   const [playing, setPlaying] = useState(false);
-  const dragging = useRef<{ id: string; index: number } | null>(null);
+  const overlay = useRef<SVGSVGElement | null>(null);
+  const dragging = useRef<{
+    id: string;
+    index: number;
+    pointerId: number;
+  } | null>(null);
+  const drawingTap = useRef<{ pointerId: number; x: number; y: number } | null>(
+    null,
+  );
   const active = run?.status === "running" || run?.status === "queued";
   const result = run?.result ?? null;
   const playVideo = !live && active && Boolean(result);
@@ -236,6 +244,7 @@ export function CountingPreview({
         <canvas ref={canvasRef} style={canvasStyle} aria-hidden="true" />
         {transform && (
           <svg
+            ref={overlay}
             aria-label="Vẽ vùng polygon"
             role="img"
             viewBox={`0 0 ${viewport.width} ${viewport.height}`}
@@ -245,24 +254,63 @@ export function CountingPreview({
               pointerEvents: canInteract && draft !== null ? "auto" : "none",
             }}
             onPointerDown={(event) => {
-              if (!canInteract || draft === null) return;
-              const point = pointer(event);
-              if (point) {
-                if (!live) video.current?.pause();
-                onPoint(point);
-              }
+              if (!canInteract || draft === null || !event.isPrimary) return;
+              if (event.pointerType === "mouse" && event.button !== 0) return;
+              event.preventDefault();
+              if (!live) video.current?.pause();
+              drawingTap.current = {
+                pointerId: event.pointerId,
+                x: event.clientX,
+                y: event.clientY,
+              };
+              event.currentTarget.setPointerCapture(event.pointerId);
             }}
             onPointerMove={(event) => {
-              if (!canInteract || !dragging.current) return;
+              if (
+                !canInteract ||
+                dragging.current?.pointerId !== event.pointerId
+              )
+                return;
+              event.preventDefault();
               const point = pointer(event, true);
               if (point)
                 onMove(dragging.current.id, dragging.current.index, point);
             }}
-            onPointerUp={() => {
+            onPointerUp={(event) => {
+              const tap = drawingTap.current;
+              drawingTap.current = null;
               dragging.current = null;
+              if (
+                canInteract &&
+                draft !== null &&
+                tap?.pointerId === event.pointerId &&
+                Math.hypot(event.clientX - tap.x, event.clientY - tap.y) <= 12
+              ) {
+                const point = pointer(event);
+                if (point) {
+                  const last = draft.at(-1);
+                  const projected = last ? project(last) : null;
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  if (
+                    !projected ||
+                    Math.hypot(
+                      event.clientX - rect.left - projected.x,
+                      event.clientY - rect.top - projected.y,
+                    ) >= 10
+                  )
+                    onPoint(point);
+                }
+              }
+              if (event.currentTarget.hasPointerCapture(event.pointerId))
+                event.currentTarget.releasePointerCapture(event.pointerId);
             }}
             onPointerCancel={() => {
               dragging.current = null;
+              drawingTap.current = null;
+            }}
+            onLostPointerCapture={() => {
+              dragging.current = null;
+              drawingTap.current = null;
             }}
           >
             {showZones &&
@@ -276,13 +324,16 @@ export function CountingPreview({
                       fillOpacity={0.08}
                       style={{
                         pointerEvents:
-                          canInteract && draft === null ? "stroke" : "none",
+                          canInteract && draft === null ? "all" : "none",
+                        touchAction: canInteract ? "none" : "auto",
                       }}
                       stroke={zone.color}
                       strokeWidth={selected === zone.id ? 3 : 2}
                       onPointerDown={(event) => {
                         if (draft === null && canInteract) {
+                          event.preventDefault();
                           event.stopPropagation();
+                          if (!live) video.current?.pause();
                           onSelect(zone.id);
                         }
                       }}
@@ -304,26 +355,39 @@ export function CountingPreview({
                       draft === null &&
                       zone.id === selected &&
                       points.map((p, index) => (
-                        <circle
+                        <g
                           key={index}
-                          cx={p.x}
-                          cy={p.y}
-                          r={6}
-                          fill="white"
-                          stroke={zone.color}
-                          strokeWidth={2}
-                          className="cursor-move"
+                          aria-label={`Đỉnh ${index + 1} của ${zone.name}`}
+                          className="cursor-move touch-none"
                           style={{
-                            pointerEvents: canInteract ? "auto" : "none",
+                            pointerEvents: canInteract ? "all" : "none",
+                            touchAction: "none",
                           }}
                           onPointerDown={(event) => {
+                            if (!canInteract || !event.isPrimary) return;
+                            event.preventDefault();
                             event.stopPropagation();
-                            dragging.current = { id: zone.id, index };
-                            event.currentTarget.setPointerCapture(
-                              event.pointerId,
-                            );
+                            if (!live) video.current?.pause();
+                            drawingTap.current = null;
+                            dragging.current = {
+                              id: zone.id,
+                              index,
+                              pointerId: event.pointerId,
+                            };
+                            overlay.current?.setPointerCapture(event.pointerId);
                           }}
-                        />
+                        >
+                          <circle cx={p.x} cy={p.y} r={22} fill="transparent" />
+                          <circle
+                            cx={p.x}
+                            cy={p.y}
+                            r={7}
+                            fill="white"
+                            stroke={zone.color}
+                            strokeWidth={2}
+                            pointerEvents="none"
+                          />
+                        </g>
                       ))}
                   </g>
                 );

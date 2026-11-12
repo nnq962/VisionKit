@@ -1,5 +1,7 @@
 "use client";
 
+import { createUuid } from "@/lib/uuid";
+
 import { supportsCounting } from "./counting-model";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -340,7 +342,7 @@ export function CountingPage({
     try {
       const saved = await saveSource(
         {
-          id: crypto.randomUUID(),
+          id: createUuid(),
           name: fileName || file.name,
           kind: "video",
           location: "",
